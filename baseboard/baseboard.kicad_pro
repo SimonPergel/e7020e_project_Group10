@@ -252,6 +252,10 @@
   "erc": {
     "erc_exclusions": [
       [
+        "lib_symbol_mismatch|2463800|1511300|8de3cbb8-3eaa-4972-a636-5f5223aa8db9|00000000-0000-0000-0000-000000000000|||",
+        "Powerdraw from USB"
+      ],
+      [
         "lib_symbol_mismatch|635000|1841500|8de3cbb8-3eaa-4972-a636-5f5223aa8db9|00000000-0000-0000-0000-000000000000|||",
         "Changed VBUS and GND to Power Output to enable it to \"draw\" power from USB"
       ]

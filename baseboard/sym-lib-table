@@ -1,4 +1,4 @@
 (sym_lib_table
   (version 7)
-  (lib (name "E7020E")(type "KiCad")(uri "/home/walpat-1/e7020e_hw/e7020e-kicad/E7020E.kicad_sym")(options "")(descr ""))
+  (lib (name "E7020E")(type "KiCad")(uri "/home/walpat-1/Embedded/e7020e_project_Group10/e7020e-kicad/E7020E.kicad_sym")(options "")(descr ""))
 )
