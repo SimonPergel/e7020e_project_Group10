@@ -9745,7 +9745,6 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "97262150-e6b2-4246-867b-0d8bc1bb7f60")
 		(property "Reference" "#FLG01"
 			(at 87.63 139.065 0)
@@ -10446,7 +10445,6 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "ac6254b2-8816-4104-be0a-26ebe0cf47ba")
 		(property "Reference" "#PWR010"
 			(at 73.66 104.14 0)
@@ -12665,7 +12663,6 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "fd076741-46a4-4c09-aeb6-ffe957a480be")
 		(property "Reference" "BT1"
 			(at 77.47 181.0386 0)
