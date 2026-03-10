@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_CCA","DEFAULT_CHANNEL","DEFAULT_SFD","DEFAULT_TXPOWER"],"enum":["Cca","Channel","Error","TxPower"],"struct":["Packet","Radio"]};

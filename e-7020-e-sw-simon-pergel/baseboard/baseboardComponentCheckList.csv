@@ -1,0 +1,26 @@
+Id;Designator;Footprint;Quantity;Designation;Supplier and ref;
+1;R6,R2,R1;R_0603_1608Metric;3;5.1kOhm;;check
+2;TP4,TP1,TP2,TP6,TP3,TP5;TestPoint_THTPad_1.5x1.5mm_Drill0.8mm;6;~;;check
+3;J1;PinHeader_1x04_P2.54mm_Vertical;1;SWD;;check
+4;C11,C5,C7;C_0603_1608Metric;3;100nF;;check
+5;D1,D2,D3;LED_0805_2012Metric;3;LED;;check
+6;C16,C15,C1,C2;C_0603_1608Metric;4;12pF;;check
+7;C18,C4,C6,C19,C9;C_0603_1608Metric;5;4.7µF;;check
+8;U2;SOT-89-3;1;MCP1700x-330xxMB;;check
+9;Power1;PinHeader_1x03_P2.54mm_Vertical;1;-;;check
+10;R5,R4,R3;R_0603_1608Metric;3;330Ohm;;check
+11;C3,C13;C_0603_1608Metric;2;1µF;;saknad
+12;D5,D4;D_SOD-123;2;D_Schottky;;check
+13;X2;Crystal_AT310_D3.0mm_L10.0mm_Horizontal;1;32kHz;;check
+14;C8;C_0603_1608Metric;1;820pF;;check
+15;C10;C_0603_1608Metric;1;100pF;;check
+16;Y1;Crystal_SMD_3225-4Pin_3.2x2.5mm_HandSoldering;1;32MHz;;check
+17;C12;C_0603_1608Metric;1;1.0µF;;saknad
+18;U1;QFN-40-1EP_5x5mm_P0.4mm_EP3.6x3.6mm;1;nRF52833-QDxx;;check
+19;Q1;SOT-23;1;Q_PMOS_DSG;;check
+20;SW1;SW_PUSH_6mm;1;SW_Push;;check
+21;BT1;BatteryHolder_Keystone_3002_1x2032;1;Battery_Cell;;check
+22;J4;USB_A_Molex_48037-2200_Horizontal;1;USB_A;;check
+23;SW2;SW_PUSH_6mm;1;RST;;check
+24;J2;USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal;1;USB_C_Receptacle_USB2.0_16P;;check
+25;J3;PinHeader_1x04_P2.54mm_Vertical;1;DISP;;check

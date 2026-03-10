@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Gain","Oversample","Reference","Resistor","Resolution","Time"],"struct":["InternalVdd","InternalVddHdiv5","Saadc","SaadcConfig"],"trait":["Channel"]};

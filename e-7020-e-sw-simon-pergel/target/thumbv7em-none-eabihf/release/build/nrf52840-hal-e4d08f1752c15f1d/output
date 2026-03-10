@@ -1,0 +1,3 @@
+cargo:rustc-link-search=/home/isoepe-1/Embedded/e-7020-e-sw-simon-pergel/target/thumbv7em-none-eabihf/release/build/nrf52840-hal-e4d08f1752c15f1d/out
+cargo:rerun-if-changed=build.rs
+cargo:rerun-if-changed=memory.x

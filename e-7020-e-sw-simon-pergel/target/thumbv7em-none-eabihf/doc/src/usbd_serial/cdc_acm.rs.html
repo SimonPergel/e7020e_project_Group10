@@ -1,0 +1,387 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `/home/isoepe-1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/usbd-serial-0.2.2/src/cdc_acm.rs`."><title>cdc_acm.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="usbd_serial" data-themes="" data-resource-suffix="" data-rustdoc-version="1.93.0 (254b59607 2026-01-19)" data-channel="1.93.0" data-search-js="search-9e2438ea.js" data-stringdex-js="stringdex-a3946164.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-a410ff4d.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">usbd_serial/</div>cdc_acm.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>core::convert::TryInto;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>core::mem;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>usb_device::class_prelude::<span class="kw-2">*</span>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>usb_device::descriptor::lang_id::LangID;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>usb_device::device::DEFAULT_ALTERNATE_SETTING;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>usb_device::Result;
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a><span class="doccomment">/// This should be used as `device_class` when building the `UsbDevice`.
+<a href=#9 id=9 data-nosnippet>9</a></span><span class="kw">pub const </span>USB_CLASS_CDC: u8 = <span class="number">0x02</span>;
+<a href=#10 id=10 data-nosnippet>10</a>
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">const </span>USB_CLASS_CDC_DATA: u8 = <span class="number">0x0a</span>;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">const </span>CDC_SUBCLASS_ACM: u8 = <span class="number">0x02</span>;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">const </span>CDC_PROTOCOL_NONE: u8 = <span class="number">0x00</span>;
+<a href=#14 id=14 data-nosnippet>14</a>
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">const </span>CS_INTERFACE: u8 = <span class="number">0x24</span>;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">const </span>CDC_TYPE_HEADER: u8 = <span class="number">0x00</span>;
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">const </span>CDC_TYPE_CALL_MANAGEMENT: u8 = <span class="number">0x01</span>;
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">const </span>CDC_TYPE_ACM: u8 = <span class="number">0x02</span>;
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">const </span>CDC_TYPE_UNION: u8 = <span class="number">0x06</span>;
+<a href=#20 id=20 data-nosnippet>20</a>
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">const </span>REQ_SEND_ENCAPSULATED_COMMAND: u8 = <span class="number">0x00</span>;
+<a href=#22 id=22 data-nosnippet>22</a><span class="attr">#[allow(unused)]
+<a href=#23 id=23 data-nosnippet>23</a></span><span class="kw">const </span>REQ_GET_ENCAPSULATED_COMMAND: u8 = <span class="number">0x01</span>;
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">const </span>REQ_SET_LINE_CODING: u8 = <span class="number">0x20</span>;
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">const </span>REQ_GET_LINE_CODING: u8 = <span class="number">0x21</span>;
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">const </span>REQ_SET_CONTROL_LINE_STATE: u8 = <span class="number">0x22</span>;
+<a href=#27 id=27 data-nosnippet>27</a>
+<a href=#28 id=28 data-nosnippet>28</a><span class="doccomment">/// Packet level implementation of a CDC-ACM serial port.
+<a href=#29 id=29 data-nosnippet>29</a>///
+<a href=#30 id=30 data-nosnippet>30</a>/// This class can be used directly and it has the least overhead due to directly reading and
+<a href=#31 id=31 data-nosnippet>31</a>/// writing USB packets with no intermediate buffers, but it will not act like a stream-like serial
+<a href=#32 id=32 data-nosnippet>32</a>/// port. The following constraints must be followed if you use this class directly:
+<a href=#33 id=33 data-nosnippet>33</a>///
+<a href=#34 id=34 data-nosnippet>34</a>/// - `read_packet` must be called with a buffer large enough to hold max_packet_size bytes, and the
+<a href=#35 id=35 data-nosnippet>35</a>///   method will return a `WouldBlock` error if there is no packet to be read.
+<a href=#36 id=36 data-nosnippet>36</a>/// - `write_packet` must not be called with a buffer larger than max_packet_size bytes, and the
+<a href=#37 id=37 data-nosnippet>37</a>///   method will return a `WouldBlock` error if the previous packet has not been sent yet.
+<a href=#38 id=38 data-nosnippet>38</a>/// - If you write a packet that is exactly max_packet_size bytes long, it won't be processed by the
+<a href=#39 id=39 data-nosnippet>39</a>///   host operating system until a subsequent shorter packet is sent. A zero-length packet (ZLP)
+<a href=#40 id=40 data-nosnippet>40</a>///   can be sent if there is no other data to send. This is because USB bulk transactions must be
+<a href=#41 id=41 data-nosnippet>41</a>///   terminated with a short packet, even if the bulk endpoint is used for stream-like data.
+<a href=#42 id=42 data-nosnippet>42</a></span><span class="kw">pub struct </span>CdcAcmClass&lt;<span class="lifetime">'a</span>, B: UsbBus&gt; {
+<a href=#43 id=43 data-nosnippet>43</a>    comm_if: InterfaceNumber,
+<a href=#44 id=44 data-nosnippet>44</a>    comm_if_name: <span class="prelude-ty">Option</span>&lt;(StringIndex, <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str)&gt;,
+<a href=#45 id=45 data-nosnippet>45</a>    comm_ep: EndpointIn&lt;<span class="lifetime">'a</span>, B&gt;,
+<a href=#46 id=46 data-nosnippet>46</a>    data_if: InterfaceNumber,
+<a href=#47 id=47 data-nosnippet>47</a>    data_if_name: <span class="prelude-ty">Option</span>&lt;(StringIndex, <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str)&gt;,
+<a href=#48 id=48 data-nosnippet>48</a>    read_ep: EndpointOut&lt;<span class="lifetime">'a</span>, B&gt;,
+<a href=#49 id=49 data-nosnippet>49</a>    write_ep: EndpointIn&lt;<span class="lifetime">'a</span>, B&gt;,
+<a href=#50 id=50 data-nosnippet>50</a>    line_coding: LineCoding,
+<a href=#51 id=51 data-nosnippet>51</a>    dtr: bool,
+<a href=#52 id=52 data-nosnippet>52</a>    rts: bool,
+<a href=#53 id=53 data-nosnippet>53</a>}
+<a href=#54 id=54 data-nosnippet>54</a>
+<a href=#55 id=55 data-nosnippet>55</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, B: UsbBus&gt; CdcAcmClass&lt;<span class="lifetime">'a</span>, B&gt; {
+<a href=#56 id=56 data-nosnippet>56</a>    <span class="doccomment">/// Creates a new CdcAcmClass with the provided UsbBus and max_packet_size in bytes. For
+<a href=#57 id=57 data-nosnippet>57</a>    /// full-speed devices, max_packet_size has to be one of 8, 16, 32 or 64.
+<a href=#58 id=58 data-nosnippet>58</a>    </span><span class="kw">pub fn </span>new&lt;<span class="lifetime">'alloc</span>: <span class="lifetime">'a</span>&gt;(
+<a href=#59 id=59 data-nosnippet>59</a>        alloc: <span class="kw-2">&amp;</span><span class="lifetime">'alloc </span>UsbBusAllocator&lt;B&gt;,
+<a href=#60 id=60 data-nosnippet>60</a>        max_packet_size: u16,
+<a href=#61 id=61 data-nosnippet>61</a>    ) -&gt; CdcAcmClass&lt;<span class="lifetime">'a</span>, B&gt; {
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="self">Self</span>::new_with_interface_names(alloc, max_packet_size, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)
+<a href=#63 id=63 data-nosnippet>63</a>    }
+<a href=#64 id=64 data-nosnippet>64</a>
+<a href=#65 id=65 data-nosnippet>65</a>    <span class="doccomment">/// Creates a new CdcAcmClass with the provided UsbBus and max_packet_size in bytes. For
+<a href=#66 id=66 data-nosnippet>66</a>    /// full-speed devices, max_packet_size has to be one of 8, 16, 32 or 64. Additionally,
+<a href=#67 id=67 data-nosnippet>67</a>    /// this lets you specify optional names for the CDC interfaces, to better organize composite devices.
+<a href=#68 id=68 data-nosnippet>68</a>    </span><span class="kw">pub fn </span>new_with_interface_names&lt;<span class="lifetime">'alloc</span>: <span class="lifetime">'a</span>&gt;(
+<a href=#69 id=69 data-nosnippet>69</a>        alloc: <span class="kw-2">&amp;</span><span class="lifetime">'alloc </span>UsbBusAllocator&lt;B&gt;,
+<a href=#70 id=70 data-nosnippet>70</a>        max_packet_size: u16,
+<a href=#71 id=71 data-nosnippet>71</a>        comm_if_name: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'static </span>str&gt;,
+<a href=#72 id=72 data-nosnippet>72</a>        data_if_name: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'static </span>str&gt;,
+<a href=#73 id=73 data-nosnippet>73</a>    ) -&gt; CdcAcmClass&lt;<span class="lifetime">'a</span>, B&gt; {
+<a href=#74 id=74 data-nosnippet>74</a>        <span class="kw">let </span>comm_if_name = comm_if_name.map(|s| (alloc.string(), s));
+<a href=#75 id=75 data-nosnippet>75</a>        <span class="kw">let </span>data_if_name = data_if_name.map(|s| (alloc.string(), s));
+<a href=#76 id=76 data-nosnippet>76</a>        CdcAcmClass {
+<a href=#77 id=77 data-nosnippet>77</a>            comm_if: alloc.interface(),
+<a href=#78 id=78 data-nosnippet>78</a>            comm_if_name,
+<a href=#79 id=79 data-nosnippet>79</a>            comm_ep: alloc.interrupt(<span class="number">8</span>, <span class="number">255</span>),
+<a href=#80 id=80 data-nosnippet>80</a>            data_if: alloc.interface(),
+<a href=#81 id=81 data-nosnippet>81</a>            data_if_name,
+<a href=#82 id=82 data-nosnippet>82</a>            read_ep: alloc.bulk(max_packet_size),
+<a href=#83 id=83 data-nosnippet>83</a>            write_ep: alloc.bulk(max_packet_size),
+<a href=#84 id=84 data-nosnippet>84</a>            line_coding: LineCoding {
+<a href=#85 id=85 data-nosnippet>85</a>                stop_bits: StopBits::One,
+<a href=#86 id=86 data-nosnippet>86</a>                data_bits: <span class="number">8</span>,
+<a href=#87 id=87 data-nosnippet>87</a>                parity_type: ParityType::None,
+<a href=#88 id=88 data-nosnippet>88</a>                data_rate: <span class="number">9_600</span>,
+<a href=#89 id=89 data-nosnippet>89</a>            },
+<a href=#90 id=90 data-nosnippet>90</a>            dtr: <span class="bool-val">false</span>,
+<a href=#91 id=91 data-nosnippet>91</a>            rts: <span class="bool-val">false</span>,
+<a href=#92 id=92 data-nosnippet>92</a>        }
+<a href=#93 id=93 data-nosnippet>93</a>    }
+<a href=#94 id=94 data-nosnippet>94</a>
+<a href=#95 id=95 data-nosnippet>95</a>    <span class="doccomment">/// Gets the maximum packet size in bytes.
+<a href=#96 id=96 data-nosnippet>96</a>    </span><span class="kw">pub fn </span>max_packet_size(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; u16 {
+<a href=#97 id=97 data-nosnippet>97</a>        <span class="comment">// The size is the same for both endpoints.
+<a href=#98 id=98 data-nosnippet>98</a>        </span><span class="self">self</span>.read_ep.max_packet_size()
+<a href=#99 id=99 data-nosnippet>99</a>    }
+<a href=#100 id=100 data-nosnippet>100</a>
+<a href=#101 id=101 data-nosnippet>101</a>    <span class="doccomment">/// Gets the current line coding. The line coding contains information that's mainly relevant
+<a href=#102 id=102 data-nosnippet>102</a>    /// for USB to UART serial port emulators, and can be ignored if not relevant.
+<a href=#103 id=103 data-nosnippet>103</a>    </span><span class="kw">pub fn </span>line_coding(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>LineCoding {
+<a href=#104 id=104 data-nosnippet>104</a>        <span class="kw-2">&amp;</span><span class="self">self</span>.line_coding
+<a href=#105 id=105 data-nosnippet>105</a>    }
+<a href=#106 id=106 data-nosnippet>106</a>
+<a href=#107 id=107 data-nosnippet>107</a>    <span class="doccomment">/// Gets the DTR (data terminal ready) state
+<a href=#108 id=108 data-nosnippet>108</a>    </span><span class="kw">pub fn </span>dtr(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#109 id=109 data-nosnippet>109</a>        <span class="self">self</span>.dtr
+<a href=#110 id=110 data-nosnippet>110</a>    }
+<a href=#111 id=111 data-nosnippet>111</a>
+<a href=#112 id=112 data-nosnippet>112</a>    <span class="doccomment">/// Gets the RTS (request to send) state
+<a href=#113 id=113 data-nosnippet>113</a>    </span><span class="kw">pub fn </span>rts(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#114 id=114 data-nosnippet>114</a>        <span class="self">self</span>.rts
+<a href=#115 id=115 data-nosnippet>115</a>    }
+<a href=#116 id=116 data-nosnippet>116</a>
+<a href=#117 id=117 data-nosnippet>117</a>    <span class="doccomment">/// Writes a single packet into the IN endpoint.
+<a href=#118 id=118 data-nosnippet>118</a>    </span><span class="kw">pub fn </span>write_packet(<span class="kw-2">&amp;mut </span><span class="self">self</span>, data: <span class="kw-2">&amp;</span>[u8]) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt; {
+<a href=#119 id=119 data-nosnippet>119</a>        <span class="self">self</span>.write_ep.write(data)
+<a href=#120 id=120 data-nosnippet>120</a>    }
+<a href=#121 id=121 data-nosnippet>121</a>
+<a href=#122 id=122 data-nosnippet>122</a>    <span class="doccomment">/// Reads a single packet from the OUT endpoint.
+<a href=#123 id=123 data-nosnippet>123</a>    </span><span class="kw">pub fn </span>read_packet(<span class="kw-2">&amp;mut </span><span class="self">self</span>, data: <span class="kw-2">&amp;mut </span>[u8]) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt; {
+<a href=#124 id=124 data-nosnippet>124</a>        <span class="self">self</span>.read_ep.read(data)
+<a href=#125 id=125 data-nosnippet>125</a>    }
+<a href=#126 id=126 data-nosnippet>126</a>
+<a href=#127 id=127 data-nosnippet>127</a>    <span class="doccomment">/// Gets the IN endpoint.
+<a href=#128 id=128 data-nosnippet>128</a>    </span><span class="kw">pub fn </span>write_ep(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>EndpointIn&lt;<span class="lifetime">'a</span>, B&gt; {
+<a href=#129 id=129 data-nosnippet>129</a>        <span class="kw-2">&amp;</span><span class="self">self</span>.write_ep
+<a href=#130 id=130 data-nosnippet>130</a>    }
+<a href=#131 id=131 data-nosnippet>131</a>
+<a href=#132 id=132 data-nosnippet>132</a>    <span class="doccomment">/// Mutably gets the IN endpoint.
+<a href=#133 id=133 data-nosnippet>133</a>    </span><span class="kw">pub fn </span>write_ep_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>EndpointIn&lt;<span class="lifetime">'a</span>, B&gt; {
+<a href=#134 id=134 data-nosnippet>134</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>.write_ep
+<a href=#135 id=135 data-nosnippet>135</a>    }
+<a href=#136 id=136 data-nosnippet>136</a>
+<a href=#137 id=137 data-nosnippet>137</a>    <span class="doccomment">/// Gets the OUT endpoint.
+<a href=#138 id=138 data-nosnippet>138</a>    </span><span class="kw">pub fn </span>read_ep(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>EndpointOut&lt;<span class="lifetime">'a</span>, B&gt; {
+<a href=#139 id=139 data-nosnippet>139</a>        <span class="kw-2">&amp;</span><span class="self">self</span>.read_ep
+<a href=#140 id=140 data-nosnippet>140</a>    }
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="doccomment">/// Mutably gets the OUT endpoint.
+<a href=#143 id=143 data-nosnippet>143</a>    </span><span class="kw">pub fn </span>read_ep_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>EndpointOut&lt;<span class="lifetime">'a</span>, B&gt; {
+<a href=#144 id=144 data-nosnippet>144</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>.read_ep
+<a href=#145 id=145 data-nosnippet>145</a>    }
+<a href=#146 id=146 data-nosnippet>146</a>}
+<a href=#147 id=147 data-nosnippet>147</a>
+<a href=#148 id=148 data-nosnippet>148</a><span class="kw">impl</span>&lt;B: UsbBus&gt; UsbClass&lt;B&gt; <span class="kw">for </span>CdcAcmClass&lt;<span class="lifetime">'_</span>, B&gt; {
+<a href=#149 id=149 data-nosnippet>149</a>    <span class="kw">fn </span>get_configuration_descriptors(<span class="kw-2">&amp;</span><span class="self">self</span>, writer: <span class="kw-2">&amp;mut </span>DescriptorWriter) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+<a href=#150 id=150 data-nosnippet>150</a>        writer.iad(
+<a href=#151 id=151 data-nosnippet>151</a>            <span class="self">self</span>.comm_if,
+<a href=#152 id=152 data-nosnippet>152</a>            <span class="number">2</span>,
+<a href=#153 id=153 data-nosnippet>153</a>            USB_CLASS_CDC,
+<a href=#154 id=154 data-nosnippet>154</a>            CDC_SUBCLASS_ACM,
+<a href=#155 id=155 data-nosnippet>155</a>            CDC_PROTOCOL_NONE,
+<a href=#156 id=156 data-nosnippet>156</a>            <span class="prelude-val">None</span>,
+<a href=#157 id=157 data-nosnippet>157</a>        )<span class="question-mark">?</span>;
+<a href=#158 id=158 data-nosnippet>158</a>
+<a href=#159 id=159 data-nosnippet>159</a>        writer.interface_alt(
+<a href=#160 id=160 data-nosnippet>160</a>            <span class="self">self</span>.comm_if,
+<a href=#161 id=161 data-nosnippet>161</a>            DEFAULT_ALTERNATE_SETTING,
+<a href=#162 id=162 data-nosnippet>162</a>            USB_CLASS_CDC,
+<a href=#163 id=163 data-nosnippet>163</a>            CDC_SUBCLASS_ACM,
+<a href=#164 id=164 data-nosnippet>164</a>            CDC_PROTOCOL_NONE,
+<a href=#165 id=165 data-nosnippet>165</a>            <span class="self">self</span>.comm_if_name.map(|n| n.<span class="number">0</span>),
+<a href=#166 id=166 data-nosnippet>166</a>        )<span class="question-mark">?</span>;
+<a href=#167 id=167 data-nosnippet>167</a>
+<a href=#168 id=168 data-nosnippet>168</a>        writer.write(
+<a href=#169 id=169 data-nosnippet>169</a>            CS_INTERFACE,
+<a href=#170 id=170 data-nosnippet>170</a>            <span class="kw-2">&amp;</span>[
+<a href=#171 id=171 data-nosnippet>171</a>                CDC_TYPE_HEADER, <span class="comment">// bDescriptorSubtype
+<a href=#172 id=172 data-nosnippet>172</a>                </span><span class="number">0x10</span>,
+<a href=#173 id=173 data-nosnippet>173</a>                <span class="number">0x01</span>, <span class="comment">// bcdCDC (1.10)
+<a href=#174 id=174 data-nosnippet>174</a>            </span>],
+<a href=#175 id=175 data-nosnippet>175</a>        )<span class="question-mark">?</span>;
+<a href=#176 id=176 data-nosnippet>176</a>
+<a href=#177 id=177 data-nosnippet>177</a>        writer.write(
+<a href=#178 id=178 data-nosnippet>178</a>            CS_INTERFACE,
+<a href=#179 id=179 data-nosnippet>179</a>            <span class="kw-2">&amp;</span>[
+<a href=#180 id=180 data-nosnippet>180</a>                CDC_TYPE_ACM, <span class="comment">// bDescriptorSubtype
+<a href=#181 id=181 data-nosnippet>181</a>                </span><span class="number">0x00</span>,         <span class="comment">// bmCapabilities
+<a href=#182 id=182 data-nosnippet>182</a>            </span>],
+<a href=#183 id=183 data-nosnippet>183</a>        )<span class="question-mark">?</span>;
+<a href=#184 id=184 data-nosnippet>184</a>
+<a href=#185 id=185 data-nosnippet>185</a>        writer.write(
+<a href=#186 id=186 data-nosnippet>186</a>            CS_INTERFACE,
+<a href=#187 id=187 data-nosnippet>187</a>            <span class="kw-2">&amp;</span>[
+<a href=#188 id=188 data-nosnippet>188</a>                CDC_TYPE_UNION,      <span class="comment">// bDescriptorSubtype
+<a href=#189 id=189 data-nosnippet>189</a>                </span><span class="self">self</span>.comm_if.into(), <span class="comment">// bControlInterface
+<a href=#190 id=190 data-nosnippet>190</a>                </span><span class="self">self</span>.data_if.into(), <span class="comment">// bSubordinateInterface
+<a href=#191 id=191 data-nosnippet>191</a>            </span>],
+<a href=#192 id=192 data-nosnippet>192</a>        )<span class="question-mark">?</span>;
+<a href=#193 id=193 data-nosnippet>193</a>
+<a href=#194 id=194 data-nosnippet>194</a>        writer.write(
+<a href=#195 id=195 data-nosnippet>195</a>            CS_INTERFACE,
+<a href=#196 id=196 data-nosnippet>196</a>            <span class="kw-2">&amp;</span>[
+<a href=#197 id=197 data-nosnippet>197</a>                CDC_TYPE_CALL_MANAGEMENT, <span class="comment">// bDescriptorSubtype
+<a href=#198 id=198 data-nosnippet>198</a>                </span><span class="number">0x00</span>,                     <span class="comment">// bmCapabilities
+<a href=#199 id=199 data-nosnippet>199</a>                </span><span class="self">self</span>.data_if.into(),      <span class="comment">// bDataInterface
+<a href=#200 id=200 data-nosnippet>200</a>            </span>],
+<a href=#201 id=201 data-nosnippet>201</a>        )<span class="question-mark">?</span>;
+<a href=#202 id=202 data-nosnippet>202</a>
+<a href=#203 id=203 data-nosnippet>203</a>        writer.endpoint(<span class="kw-2">&amp;</span><span class="self">self</span>.comm_ep)<span class="question-mark">?</span>;
+<a href=#204 id=204 data-nosnippet>204</a>
+<a href=#205 id=205 data-nosnippet>205</a>        writer.interface_alt(
+<a href=#206 id=206 data-nosnippet>206</a>            <span class="self">self</span>.data_if,
+<a href=#207 id=207 data-nosnippet>207</a>            DEFAULT_ALTERNATE_SETTING,
+<a href=#208 id=208 data-nosnippet>208</a>            USB_CLASS_CDC_DATA,
+<a href=#209 id=209 data-nosnippet>209</a>            <span class="number">0x00</span>,
+<a href=#210 id=210 data-nosnippet>210</a>            <span class="number">0x00</span>,
+<a href=#211 id=211 data-nosnippet>211</a>            <span class="self">self</span>.data_if_name.map(|n| n.<span class="number">0</span>),
+<a href=#212 id=212 data-nosnippet>212</a>        )<span class="question-mark">?</span>;
+<a href=#213 id=213 data-nosnippet>213</a>
+<a href=#214 id=214 data-nosnippet>214</a>        writer.endpoint(<span class="kw-2">&amp;</span><span class="self">self</span>.write_ep)<span class="question-mark">?</span>;
+<a href=#215 id=215 data-nosnippet>215</a>        writer.endpoint(<span class="kw-2">&amp;</span><span class="self">self</span>.read_ep)<span class="question-mark">?</span>;
+<a href=#216 id=216 data-nosnippet>216</a>
+<a href=#217 id=217 data-nosnippet>217</a>        <span class="prelude-val">Ok</span>(())
+<a href=#218 id=218 data-nosnippet>218</a>    }
+<a href=#219 id=219 data-nosnippet>219</a>
+<a href=#220 id=220 data-nosnippet>220</a>    <span class="kw">fn </span>get_string(<span class="kw-2">&amp;</span><span class="self">self</span>, index: StringIndex, _lang_id: LangID) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt; {
+<a href=#221 id=221 data-nosnippet>221</a>        <span class="kw">match </span>(<span class="self">self</span>.comm_if_name, <span class="self">self</span>.data_if_name) {
+<a href=#222 id=222 data-nosnippet>222</a>            (<span class="prelude-val">Some</span>((i, s)), <span class="kw">_</span>) <span class="kw">if </span>i == index =&gt; <span class="prelude-val">Some</span>(s),
+<a href=#223 id=223 data-nosnippet>223</a>            (<span class="kw">_</span>, <span class="prelude-val">Some</span>((i, s))) <span class="kw">if </span>i == index =&gt; <span class="prelude-val">Some</span>(s),
+<a href=#224 id=224 data-nosnippet>224</a>            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#225 id=225 data-nosnippet>225</a>        }
+<a href=#226 id=226 data-nosnippet>226</a>    }
+<a href=#227 id=227 data-nosnippet>227</a>
+<a href=#228 id=228 data-nosnippet>228</a>    <span class="kw">fn </span>reset(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#229 id=229 data-nosnippet>229</a>        <span class="self">self</span>.line_coding = LineCoding::default();
+<a href=#230 id=230 data-nosnippet>230</a>        <span class="self">self</span>.dtr = <span class="bool-val">false</span>;
+<a href=#231 id=231 data-nosnippet>231</a>        <span class="self">self</span>.rts = <span class="bool-val">false</span>;
+<a href=#232 id=232 data-nosnippet>232</a>    }
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">fn </span>control_in(<span class="kw-2">&amp;mut </span><span class="self">self</span>, xfer: ControlIn&lt;B&gt;) {
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="kw">let </span>req = xfer.request();
+<a href=#236 id=236 data-nosnippet>236</a>
+<a href=#237 id=237 data-nosnippet>237</a>        <span class="kw">if </span>!(req.request_type == control::RequestType::Class
+<a href=#238 id=238 data-nosnippet>238</a>            &amp;&amp; req.recipient == control::Recipient::Interface
+<a href=#239 id=239 data-nosnippet>239</a>            &amp;&amp; req.index == u8::from(<span class="self">self</span>.comm_if) <span class="kw">as </span>u16)
+<a href=#240 id=240 data-nosnippet>240</a>        {
+<a href=#241 id=241 data-nosnippet>241</a>            <span class="kw">return</span>;
+<a href=#242 id=242 data-nosnippet>242</a>        }
+<a href=#243 id=243 data-nosnippet>243</a>
+<a href=#244 id=244 data-nosnippet>244</a>        <span class="kw">match </span>req.request {
+<a href=#245 id=245 data-nosnippet>245</a>            <span class="comment">// REQ_GET_ENCAPSULATED_COMMAND is not really supported - it will be rejected below.
+<a href=#246 id=246 data-nosnippet>246</a>            </span>REQ_GET_LINE_CODING <span class="kw">if </span>req.length == <span class="number">7 </span>=&gt; {
+<a href=#247 id=247 data-nosnippet>247</a>                xfer.accept(|data| {
+<a href=#248 id=248 data-nosnippet>248</a>                    data[<span class="number">0</span>..<span class="number">4</span>].copy_from_slice(<span class="kw-2">&amp;</span><span class="self">self</span>.line_coding.data_rate.to_le_bytes());
+<a href=#249 id=249 data-nosnippet>249</a>                    data[<span class="number">4</span>] = <span class="self">self</span>.line_coding.stop_bits <span class="kw">as </span>u8;
+<a href=#250 id=250 data-nosnippet>250</a>                    data[<span class="number">5</span>] = <span class="self">self</span>.line_coding.parity_type <span class="kw">as </span>u8;
+<a href=#251 id=251 data-nosnippet>251</a>                    data[<span class="number">6</span>] = <span class="self">self</span>.line_coding.data_bits;
+<a href=#252 id=252 data-nosnippet>252</a>
+<a href=#253 id=253 data-nosnippet>253</a>                    <span class="prelude-val">Ok</span>(<span class="number">7</span>)
+<a href=#254 id=254 data-nosnippet>254</a>                })
+<a href=#255 id=255 data-nosnippet>255</a>                .ok();
+<a href=#256 id=256 data-nosnippet>256</a>            }
+<a href=#257 id=257 data-nosnippet>257</a>            <span class="kw">_ </span>=&gt; {
+<a href=#258 id=258 data-nosnippet>258</a>                xfer.reject().ok();
+<a href=#259 id=259 data-nosnippet>259</a>            }
+<a href=#260 id=260 data-nosnippet>260</a>        }
+<a href=#261 id=261 data-nosnippet>261</a>    }
+<a href=#262 id=262 data-nosnippet>262</a>
+<a href=#263 id=263 data-nosnippet>263</a>    <span class="kw">fn </span>control_out(<span class="kw-2">&amp;mut </span><span class="self">self</span>, xfer: ControlOut&lt;B&gt;) {
+<a href=#264 id=264 data-nosnippet>264</a>        <span class="kw">let </span>req = xfer.request();
+<a href=#265 id=265 data-nosnippet>265</a>
+<a href=#266 id=266 data-nosnippet>266</a>        <span class="kw">if </span>!(req.request_type == control::RequestType::Class
+<a href=#267 id=267 data-nosnippet>267</a>            &amp;&amp; req.recipient == control::Recipient::Interface
+<a href=#268 id=268 data-nosnippet>268</a>            &amp;&amp; req.index == u8::from(<span class="self">self</span>.comm_if) <span class="kw">as </span>u16)
+<a href=#269 id=269 data-nosnippet>269</a>        {
+<a href=#270 id=270 data-nosnippet>270</a>            <span class="kw">return</span>;
+<a href=#271 id=271 data-nosnippet>271</a>        }
+<a href=#272 id=272 data-nosnippet>272</a>
+<a href=#273 id=273 data-nosnippet>273</a>        <span class="kw">match </span>req.request {
+<a href=#274 id=274 data-nosnippet>274</a>            REQ_SEND_ENCAPSULATED_COMMAND =&gt; {
+<a href=#275 id=275 data-nosnippet>275</a>                <span class="comment">// We don't actually support encapsulated commands but pretend we do for standards
+<a href=#276 id=276 data-nosnippet>276</a>                // compatibility.
+<a href=#277 id=277 data-nosnippet>277</a>                </span>xfer.accept().ok();
+<a href=#278 id=278 data-nosnippet>278</a>            }
+<a href=#279 id=279 data-nosnippet>279</a>            REQ_SET_LINE_CODING <span class="kw">if </span>xfer.data().len() &gt;= <span class="number">7 </span>=&gt; {
+<a href=#280 id=280 data-nosnippet>280</a>                <span class="self">self</span>.line_coding.data_rate =
+<a href=#281 id=281 data-nosnippet>281</a>                    u32::from_le_bytes(xfer.data()[<span class="number">0</span>..<span class="number">4</span>].try_into().unwrap());
+<a href=#282 id=282 data-nosnippet>282</a>                <span class="self">self</span>.line_coding.stop_bits = xfer.data()[<span class="number">4</span>].into();
+<a href=#283 id=283 data-nosnippet>283</a>                <span class="self">self</span>.line_coding.parity_type = xfer.data()[<span class="number">5</span>].into();
+<a href=#284 id=284 data-nosnippet>284</a>                <span class="self">self</span>.line_coding.data_bits = xfer.data()[<span class="number">6</span>];
+<a href=#285 id=285 data-nosnippet>285</a>
+<a href=#286 id=286 data-nosnippet>286</a>                xfer.accept().ok();
+<a href=#287 id=287 data-nosnippet>287</a>            }
+<a href=#288 id=288 data-nosnippet>288</a>            REQ_SET_CONTROL_LINE_STATE =&gt; {
+<a href=#289 id=289 data-nosnippet>289</a>                <span class="self">self</span>.dtr = (req.value &amp; <span class="number">0x0001</span>) != <span class="number">0</span>;
+<a href=#290 id=290 data-nosnippet>290</a>                <span class="self">self</span>.rts = (req.value &amp; <span class="number">0x0002</span>) != <span class="number">0</span>;
+<a href=#291 id=291 data-nosnippet>291</a>
+<a href=#292 id=292 data-nosnippet>292</a>                xfer.accept().ok();
+<a href=#293 id=293 data-nosnippet>293</a>            }
+<a href=#294 id=294 data-nosnippet>294</a>            <span class="kw">_ </span>=&gt; {
+<a href=#295 id=295 data-nosnippet>295</a>                xfer.reject().ok();
+<a href=#296 id=296 data-nosnippet>296</a>            }
+<a href=#297 id=297 data-nosnippet>297</a>        };
+<a href=#298 id=298 data-nosnippet>298</a>    }
+<a href=#299 id=299 data-nosnippet>299</a>}
+<a href=#300 id=300 data-nosnippet>300</a>
+<a href=#301 id=301 data-nosnippet>301</a><span class="doccomment">/// Number of stop bits for LineCoding
+<a href=#302 id=302 data-nosnippet>302</a></span><span class="attr">#[derive(Copy, Clone, PartialEq, Eq)]
+<a href=#303 id=303 data-nosnippet>303</a></span><span class="kw">pub enum </span>StopBits {
+<a href=#304 id=304 data-nosnippet>304</a>    <span class="doccomment">/// 1 stop bit
+<a href=#305 id=305 data-nosnippet>305</a>    </span>One = <span class="number">0</span>,
+<a href=#306 id=306 data-nosnippet>306</a>
+<a href=#307 id=307 data-nosnippet>307</a>    <span class="doccomment">/// 1.5 stop bits
+<a href=#308 id=308 data-nosnippet>308</a>    </span>OnePointFive = <span class="number">1</span>,
+<a href=#309 id=309 data-nosnippet>309</a>
+<a href=#310 id=310 data-nosnippet>310</a>    <span class="doccomment">/// 2 stop bits
+<a href=#311 id=311 data-nosnippet>311</a>    </span>Two = <span class="number">2</span>,
+<a href=#312 id=312 data-nosnippet>312</a>}
+<a href=#313 id=313 data-nosnippet>313</a>
+<a href=#314 id=314 data-nosnippet>314</a><span class="kw">impl </span>From&lt;u8&gt; <span class="kw">for </span>StopBits {
+<a href=#315 id=315 data-nosnippet>315</a>    <span class="kw">fn </span>from(value: u8) -&gt; <span class="self">Self </span>{
+<a href=#316 id=316 data-nosnippet>316</a>        <span class="kw">if </span>value &lt;= <span class="number">2 </span>{
+<a href=#317 id=317 data-nosnippet>317</a>            <span class="kw">unsafe </span>{ mem::transmute(value) }
+<a href=#318 id=318 data-nosnippet>318</a>        } <span class="kw">else </span>{
+<a href=#319 id=319 data-nosnippet>319</a>            StopBits::One
+<a href=#320 id=320 data-nosnippet>320</a>        }
+<a href=#321 id=321 data-nosnippet>321</a>    }
+<a href=#322 id=322 data-nosnippet>322</a>}
+<a href=#323 id=323 data-nosnippet>323</a>
+<a href=#324 id=324 data-nosnippet>324</a><span class="doccomment">/// Parity for LineCoding
+<a href=#325 id=325 data-nosnippet>325</a></span><span class="attr">#[derive(Copy, Clone, PartialEq, Eq)]
+<a href=#326 id=326 data-nosnippet>326</a></span><span class="kw">pub enum </span>ParityType {
+<a href=#327 id=327 data-nosnippet>327</a>    <span class="prelude-val">None </span>= <span class="number">0</span>,
+<a href=#328 id=328 data-nosnippet>328</a>    Odd = <span class="number">1</span>,
+<a href=#329 id=329 data-nosnippet>329</a>    Even = <span class="number">2</span>,
+<a href=#330 id=330 data-nosnippet>330</a>    Mark = <span class="number">3</span>,
+<a href=#331 id=331 data-nosnippet>331</a>    Space = <span class="number">4</span>,
+<a href=#332 id=332 data-nosnippet>332</a>}
+<a href=#333 id=333 data-nosnippet>333</a>
+<a href=#334 id=334 data-nosnippet>334</a><span class="kw">impl </span>From&lt;u8&gt; <span class="kw">for </span>ParityType {
+<a href=#335 id=335 data-nosnippet>335</a>    <span class="kw">fn </span>from(value: u8) -&gt; <span class="self">Self </span>{
+<a href=#336 id=336 data-nosnippet>336</a>        <span class="kw">if </span>value &lt;= <span class="number">4 </span>{
+<a href=#337 id=337 data-nosnippet>337</a>            <span class="kw">unsafe </span>{ mem::transmute(value) }
+<a href=#338 id=338 data-nosnippet>338</a>        } <span class="kw">else </span>{
+<a href=#339 id=339 data-nosnippet>339</a>            ParityType::None
+<a href=#340 id=340 data-nosnippet>340</a>        }
+<a href=#341 id=341 data-nosnippet>341</a>    }
+<a href=#342 id=342 data-nosnippet>342</a>}
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a><span class="doccomment">/// Line coding parameters
+<a href=#345 id=345 data-nosnippet>345</a>///
+<a href=#346 id=346 data-nosnippet>346</a>/// This is provided by the host for specifying the standard UART parameters such as baud rate. Can
+<a href=#347 id=347 data-nosnippet>347</a>/// be ignored if you don't plan to interface with a physical UART.
+<a href=#348 id=348 data-nosnippet>348</a></span><span class="kw">pub struct </span>LineCoding {
+<a href=#349 id=349 data-nosnippet>349</a>    stop_bits: StopBits,
+<a href=#350 id=350 data-nosnippet>350</a>    data_bits: u8,
+<a href=#351 id=351 data-nosnippet>351</a>    parity_type: ParityType,
+<a href=#352 id=352 data-nosnippet>352</a>    data_rate: u32,
+<a href=#353 id=353 data-nosnippet>353</a>}
+<a href=#354 id=354 data-nosnippet>354</a>
+<a href=#355 id=355 data-nosnippet>355</a><span class="kw">impl </span>LineCoding {
+<a href=#356 id=356 data-nosnippet>356</a>    <span class="doccomment">/// Gets the number of stop bits for UART communication.
+<a href=#357 id=357 data-nosnippet>357</a>    </span><span class="kw">pub fn </span>stop_bits(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; StopBits {
+<a href=#358 id=358 data-nosnippet>358</a>        <span class="self">self</span>.stop_bits
+<a href=#359 id=359 data-nosnippet>359</a>    }
+<a href=#360 id=360 data-nosnippet>360</a>
+<a href=#361 id=361 data-nosnippet>361</a>    <span class="doccomment">/// Gets the number of data bits for UART communication.
+<a href=#362 id=362 data-nosnippet>362</a>    </span><span class="kw">pub fn </span>data_bits(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; u8 {
+<a href=#363 id=363 data-nosnippet>363</a>        <span class="self">self</span>.data_bits
+<a href=#364 id=364 data-nosnippet>364</a>    }
+<a href=#365 id=365 data-nosnippet>365</a>
+<a href=#366 id=366 data-nosnippet>366</a>    <span class="doccomment">/// Gets the parity type for UART communication.
+<a href=#367 id=367 data-nosnippet>367</a>    </span><span class="kw">pub fn </span>parity_type(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ParityType {
+<a href=#368 id=368 data-nosnippet>368</a>        <span class="self">self</span>.parity_type
+<a href=#369 id=369 data-nosnippet>369</a>    }
+<a href=#370 id=370 data-nosnippet>370</a>
+<a href=#371 id=371 data-nosnippet>371</a>    <span class="doccomment">/// Gets the data rate in bits per second for UART communication.
+<a href=#372 id=372 data-nosnippet>372</a>    </span><span class="kw">pub fn </span>data_rate(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; u32 {
+<a href=#373 id=373 data-nosnippet>373</a>        <span class="self">self</span>.data_rate
+<a href=#374 id=374 data-nosnippet>374</a>    }
+<a href=#375 id=375 data-nosnippet>375</a>}
+<a href=#376 id=376 data-nosnippet>376</a>
+<a href=#377 id=377 data-nosnippet>377</a><span class="kw">impl </span>Default <span class="kw">for </span>LineCoding {
+<a href=#378 id=378 data-nosnippet>378</a>    <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#379 id=379 data-nosnippet>379</a>        LineCoding {
+<a href=#380 id=380 data-nosnippet>380</a>            stop_bits: StopBits::One,
+<a href=#381 id=381 data-nosnippet>381</a>            data_bits: <span class="number">8</span>,
+<a href=#382 id=382 data-nosnippet>382</a>            parity_type: ParityType::None,
+<a href=#383 id=383 data-nosnippet>383</a>            data_rate: <span class="number">9_600</span>,
+<a href=#384 id=384 data-nosnippet>384</a>        }
+<a href=#385 id=385 data-nosnippet>385</a>    }
+<a href=#386 id=386 data-nosnippet>386</a>}
+</code></pre></div></section></main></body></html>

@@ -1,0 +1,11 @@
+cargo:rustc-check-cfg=cfg(armv6m)
+cargo:rustc-check-cfg=cfg(armv7m)
+cargo:rustc-check-cfg=cfg(armv8m)
+cargo:rustc-check-cfg=cfg(cortex_m)
+cargo:rustc-check-cfg=cfg(has_fpu)
+cargo:rustc-cfg=cortex_m
+cargo:rustc-cfg=armv7m
+cargo:rustc-cfg=has_fpu
+cargo:rustc-link-search=/home/isoepe-1/Embedded/e-7020-e-sw-simon-pergel/target/thumbv7em-none-eabihf/debug/build/cortex-m-rt-fb23f10c4208372d/out
+cargo:rerun-if-changed=build.rs
+cargo:rerun-if-changed=link.x.in

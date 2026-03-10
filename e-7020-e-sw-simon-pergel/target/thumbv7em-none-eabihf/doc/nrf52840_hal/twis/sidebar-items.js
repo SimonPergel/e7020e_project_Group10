@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Error","TwiEvent"],"struct":["Pins","Transfer","Twis"],"trait":["Instance"]};

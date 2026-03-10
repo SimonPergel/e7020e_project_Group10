@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["DisplaySize128x32","DisplaySize128x64","DisplaySize64x32","DisplaySize64x48","DisplaySize72x40","DisplaySize96x16"],"trait":["DisplaySize","NewZeroed"]};
