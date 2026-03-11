@@ -54,7 +54,7 @@ mod display {
         // if the bords is not connected to the pc, a button press should display the OPT code
 }
 
-mod usb_keybord {
+mod usb_keyboard {
         // maby convert code to string 
         // send digit as HID keybord events
 }
@@ -142,13 +142,13 @@ mod app {
     }
     // When USB is connected -> send OPT
     #[task(binds = USBD, shared = [unix_time])]
-    fn usb_interrupt(mut cx: usb_interupt::Contex){
+    fn usb_interrupt(mut cx: usb_interrupt::Context){
         // Calculate the current time
         let time = cx.shared.unix_time.lock(|t| *t);
         // caculate the right OPT code based on the time
         let opt = totp::generate(SECRET, time);
 
-        usb_keyboard::send:code(opt);
+        usb_keyboard::send::code(opt);
     }
 
 
