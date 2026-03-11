@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_CCASTART_SPEC","W"],"type":["TASKS_CCASTART_W"]};

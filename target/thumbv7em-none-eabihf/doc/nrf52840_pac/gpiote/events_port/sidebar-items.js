@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_PORT_SPEC","R","W"],"type":["EVENTS_PORT_R","EVENTS_PORT_W"]};

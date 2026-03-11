@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["idle","init","monotonics"],"struct":["__rtic_internal_Monotonics","__rtic_internal_idle_Context","__rtic_internal_init_Context"]};

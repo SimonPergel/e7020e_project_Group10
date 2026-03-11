@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["cnt","dst","src"],"struct":["READ"],"type":["CNT","DST","SRC"]};

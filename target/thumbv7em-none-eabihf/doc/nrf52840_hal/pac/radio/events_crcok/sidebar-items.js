@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_CRCOK_SPEC","R","W"],"type":["EVENTS_CRCOK_R","EVENTS_CRCOK_W"]};

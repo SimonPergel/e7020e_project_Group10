@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"trait":["ConfigurablePpi","Ppi","U32Ext"]};

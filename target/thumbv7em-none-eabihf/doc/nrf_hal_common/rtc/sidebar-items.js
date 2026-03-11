@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Error","RtcCompareReg","RtcInterrupt"],"struct":["Rtc"],"trait":["Instance"]};

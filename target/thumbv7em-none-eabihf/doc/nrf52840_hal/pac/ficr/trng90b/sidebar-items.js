@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["apcutoff","bytes","rccutoff","rosc1","rosc2","rosc3","rosc4","startup"],"struct":["TRNG90B"],"type":["APCUTOFF","BYTES","RCCUTOFF","ROSC1","ROSC2","ROSC3","ROSC4","STARTUP"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["GlobalItemKind","ItemType","LocalItemKind","MainItemKind"],"struct":["ItemPrefix","MainItemSetting"]};

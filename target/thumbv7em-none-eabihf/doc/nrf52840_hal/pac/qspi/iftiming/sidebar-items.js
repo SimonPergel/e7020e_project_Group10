@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["IFTIMING_SPEC","R","W"],"type":["RXDELAY_R","RXDELAY_W"]};

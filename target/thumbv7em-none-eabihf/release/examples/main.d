@@ -1,1 +1,0 @@
-/home/isoepe-1/Embedded/e7020e_project_Group10/target/thumbv7em-none-eabihf/release/examples/main: /home/isoepe-1/Embedded/e7020e_project_Group10/command-parser/src/lib.rs /home/isoepe-1/Embedded/e7020e_project_Group10/examples/main.rs

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["Brightness","I2CInterface","SPIInterface"],"trait":["WriteOnlyDataCommand"]};

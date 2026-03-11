@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_DEACTIVATE_SPEC","W"],"type":["TASKS_DEACTIVATE_W"]};

@@ -1,9 +1,0 @@
-(function() {
-    var implementors = Object.fromEntries([["dwt_systick_monotonic",[]],["fugit",[]]]);
-    if (window.register_implementors) {
-        window.register_implementors(implementors);
-    } else {
-        window.pending_implementors = implementors;
-    }
-})()
-//{"start":57,"fragment_lengths":[28,13]}

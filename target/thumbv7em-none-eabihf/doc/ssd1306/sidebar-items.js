@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["command","mode","prelude","rotation","size"],"struct":["I2CDisplayInterface","Ssd1306"]};

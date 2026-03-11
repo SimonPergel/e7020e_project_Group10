@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_DPDMNODRIVE_SPEC","W"],"type":["TASKS_DPDMNODRIVE_W"]};

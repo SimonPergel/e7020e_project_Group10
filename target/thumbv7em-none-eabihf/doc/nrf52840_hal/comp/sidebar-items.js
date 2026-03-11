@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["CompResult","OperationMode","PowerMode","Transition","VRef"],"struct":["Comp"],"trait":["CompInputPin","CompRefPin"]};

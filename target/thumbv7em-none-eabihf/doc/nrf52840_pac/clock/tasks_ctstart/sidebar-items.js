@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_CTSTART_SPEC","W"],"type":["TASKS_CTSTART_W"]};

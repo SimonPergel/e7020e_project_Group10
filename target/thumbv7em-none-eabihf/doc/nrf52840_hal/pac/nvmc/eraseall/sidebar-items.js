@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["ERASEALL_A"],"struct":["ERASEALL_SPEC","R","W"],"type":["ERASEALL_R","ERASEALL_W"]};

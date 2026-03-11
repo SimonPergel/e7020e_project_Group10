@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["R","RCCUTOFF_SPEC"],"type":["RCCUTOFF_R"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_POFWARN_SPEC","R","W"],"type":["EVENTS_POFWARN_R","EVENTS_POFWARN_W"]};

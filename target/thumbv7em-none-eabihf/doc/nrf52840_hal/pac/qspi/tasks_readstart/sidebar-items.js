@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_READSTART_SPEC","W"],"type":["TASKS_READSTART_W"]};

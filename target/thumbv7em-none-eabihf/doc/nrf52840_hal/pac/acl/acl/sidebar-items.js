@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["addr","perm","size","unused0"],"struct":["ACL"],"type":["ADDR","PERM","SIZE","UNUSED0"]};

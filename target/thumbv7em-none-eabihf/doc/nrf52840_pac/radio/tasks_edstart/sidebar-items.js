@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_EDSTART_SPEC","W"],"type":["TASKS_EDSTART_W"]};

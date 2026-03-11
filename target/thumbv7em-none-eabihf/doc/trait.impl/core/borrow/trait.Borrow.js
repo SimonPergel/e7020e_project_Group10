@@ -1,9 +1,0 @@
-(function() {
-    var implementors = Object.fromEntries([["encode_unicode",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.93.0/core/borrow/trait.Borrow.html\" title=\"trait core::borrow::Borrow\">Borrow</a>&lt;<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.93.0/core/primitive.str.html\">str</a>&gt; for <a class=\"struct\" href=\"encode_unicode/struct.Utf8Char.html\" title=\"struct encode_unicode::Utf8Char\">Utf8Char</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.93.0/core/borrow/trait.Borrow.html\" title=\"trait core::borrow::Borrow\">Borrow</a>&lt;[<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.93.0/core/primitive.u16.html\">u16</a>]&gt; for <a class=\"struct\" href=\"encode_unicode/struct.Utf16Char.html\" title=\"struct encode_unicode::Utf16Char\">Utf16Char</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.93.0/core/borrow/trait.Borrow.html\" title=\"trait core::borrow::Borrow\">Borrow</a>&lt;[<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.93.0/core/primitive.u8.html\">u8</a>]&gt; for <a class=\"struct\" href=\"encode_unicode/struct.Utf8Char.html\" title=\"struct encode_unicode::Utf8Char\">Utf8Char</a>"]]],["usbd_serial",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.93.0/core/borrow/trait.Borrow.html\" title=\"trait core::borrow::Borrow\">Borrow</a>&lt;[<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.93.0/core/primitive.u8.html\">u8</a>]&gt; for <a class=\"struct\" href=\"usbd_serial/struct.DefaultBufferStore.html\" title=\"struct usbd_serial::DefaultBufferStore\">DefaultBufferStore</a>"]]]]);
-    if (window.register_implementors) {
-        window.register_implementors(implementors);
-    } else {
-        window.pending_implementors = implementors;
-    }
-})()
-//{"start":57,"fragment_lengths":[1153,418]}

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_ENABLERXDATA_SPEC","W"],"type":["TASKS_ENABLERXDATA_W"]};

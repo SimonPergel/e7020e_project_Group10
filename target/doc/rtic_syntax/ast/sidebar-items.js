@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Access","TaskLocal"],"struct":["App","AppArgs","ExternInterrupt","HardwareTask","HardwareTaskArgs","Idle","IdleArgs","Init","InitArgs","Local","LocalResource","Monotonic","MonotonicArgs","SharedResource","SharedResourceProperties","SoftwareTask","SoftwareTaskArgs"],"type":["ExternInterrupts","LocalResources","SharedResources"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["LIMITH_SPEC","R","W"],"type":["LIMITH_R","LIMITH_W"]};

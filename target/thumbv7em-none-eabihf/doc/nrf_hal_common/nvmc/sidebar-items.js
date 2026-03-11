@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["NvmcError"],"struct":["Nvmc"],"trait":["Instance"]};

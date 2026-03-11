@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Channel","CounterMode","Error","Group","LoadMode","Loop","Prescaler","PwmEvent","Seq","StepMode"],"struct":["Pins","Pwm","PwmChannel","PwmGroup","PwmSeq"],"trait":["Instance"]};

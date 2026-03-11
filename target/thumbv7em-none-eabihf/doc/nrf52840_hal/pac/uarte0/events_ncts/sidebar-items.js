@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_NCTS_SPEC","R","W"],"type":["EVENTS_NCTS_R","EVENTS_NCTS_W"]};

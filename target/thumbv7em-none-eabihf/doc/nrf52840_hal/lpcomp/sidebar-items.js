@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["CompResult","Transition","VRef"],"struct":["LpComp"],"trait":["LpCompInputPin","LpCompRefPin"]};

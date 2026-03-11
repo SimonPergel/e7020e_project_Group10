@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_HFCLKSTOP_SPEC","W"],"type":["TASKS_HFCLKSTOP_W"]};

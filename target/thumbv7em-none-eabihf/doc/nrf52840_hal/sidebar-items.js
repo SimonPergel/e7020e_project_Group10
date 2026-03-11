@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["ccm","clocks","comp","delay","ecb","gpio","gpiote","i2s","ieee802154","lpcomp","nvmc","pac","ppi","prelude","pwm","qdec","rng","rtc","saadc","spi","spim","spis","target_constants","temp","time","timer","twim","twis","uarte","uicr","usbd","wdt"],"struct":["Ccm","Clocks","Delay","Ecb","Rng","Rtc","Saadc","Spim","Temp","Timer","Twim","Uarte"]};

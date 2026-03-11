@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["Bps","Hertz","KiloHertz","MegaHertz"],"trait":["U32Ext"]};

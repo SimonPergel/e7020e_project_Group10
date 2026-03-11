@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_PREPARERX_SPEC","W"],"type":["TASKS_PREPARERX_W"]};

@@ -1,3 +1,0 @@
-cargo:rustc-link-search=/home/isoepe-1/Embedded/e-7020-e-sw-simon-pergel/target/thumbv7em-none-eabihf/debug/build/nrf52833-pac-f527981856c4b716/out
-cargo:rerun-if-changed=device.x
-cargo:rerun-if-changed=build.rs

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["MODE_A","STATUS_A"],"struct":["LFRCMODE_SPEC","R","W"],"type":["MODE_R","MODE_W","STATUS_R","STATUS_W"]};

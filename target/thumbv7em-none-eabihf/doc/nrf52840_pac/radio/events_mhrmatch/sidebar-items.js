@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_MHRMATCH_SPEC","R","W"],"type":["EVENTS_MHRMATCH_R","EVENTS_MHRMATCH_W"]};

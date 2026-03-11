@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_DATARDY_SPEC","R","W"],"type":["EVENTS_DATARDY_R","EVENTS_DATARDY_W"]};

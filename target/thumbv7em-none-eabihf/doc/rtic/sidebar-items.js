@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"attr":["app"],"fn":["pend"],"mod":["mutex","mutex_prelude"],"struct":["Exclusive","RacyCell"],"trait":["Monotonic","Mutex"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_CAL_SPEC","W"],"type":["TASKS_CAL_W"]};

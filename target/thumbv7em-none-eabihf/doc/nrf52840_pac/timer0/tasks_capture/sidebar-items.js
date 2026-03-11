@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_CAPTURE_SPEC","W"],"type":["TASKS_CAPTURE_W"]};

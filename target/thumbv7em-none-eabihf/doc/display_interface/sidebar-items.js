@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["DataFormat","DisplayError"],"mod":["prelude"],"trait":["AsyncWriteOnlyDataCommand","WriteOnlyDataCommand"]};

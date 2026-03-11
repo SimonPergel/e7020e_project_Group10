@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["OneShot","Periodic","Timer"],"trait":["ExtendedCCTimer","Instance"]};

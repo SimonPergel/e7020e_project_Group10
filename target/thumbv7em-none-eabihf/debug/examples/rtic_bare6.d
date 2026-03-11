@@ -1,1 +1,0 @@
-/home/isoepe-1/Embedded/e-7020-e-sw-simon-pergel/target/thumbv7em-none-eabihf/debug/examples/rtic_bare6: /home/isoepe-1/Embedded/e-7020-e-sw-simon-pergel/command-parser/src/lib.rs /home/isoepe-1/Embedded/e-7020-e-sw-simon-pergel/examples/rtic_bare6.rs

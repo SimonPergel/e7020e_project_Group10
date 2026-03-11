@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_ENDEPIN_SPEC","R","W"],"type":["EVENTS_ENDEPIN_R","EVENTS_ENDEPIN_W"]};

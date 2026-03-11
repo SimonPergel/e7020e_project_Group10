@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_DISABLED_SPEC","R","W"],"type":["EVENTS_DISABLED_R","EVENTS_DISABLED_W"]};

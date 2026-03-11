@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Align","Channels","Error","Format","I2SEvent","MckFreq","Mode","Pins","Ratio","SampleWidth"],"struct":["I2S","Transfer","TransferFullDuplex"],"trait":["SupportedWordSize"]};
