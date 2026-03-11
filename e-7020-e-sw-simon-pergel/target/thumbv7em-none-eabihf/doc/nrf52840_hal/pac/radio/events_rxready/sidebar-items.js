@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["EVENTS_RXREADY_SPEC","R","W"],"type":["EVENTS_RXREADY_R","EVENTS_RXREADY_W"]};

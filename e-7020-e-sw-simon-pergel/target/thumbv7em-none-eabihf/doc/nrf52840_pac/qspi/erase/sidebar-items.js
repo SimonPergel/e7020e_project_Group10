@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["len","ptr"],"struct":["ERASE"],"type":["LEN","PTR"]};

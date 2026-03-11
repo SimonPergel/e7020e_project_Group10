@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["R","ROSC3_SPEC"],"type":["ROSC3_R"]};

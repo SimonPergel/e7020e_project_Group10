@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["HFCLK_FREQ","LFCLK_FREQ"],"enum":["LfOscConfiguration"],"struct":["Clocks","ExternalOscillator","Internal","LfOscStarted","LfOscStopped","LfOscSynthesized"]};

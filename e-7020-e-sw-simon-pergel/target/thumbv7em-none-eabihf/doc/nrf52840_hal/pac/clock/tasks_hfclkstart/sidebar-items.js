@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["TASKS_HFCLKSTART_SPEC","W"],"type":["TASKS_HFCLKSTART_W"]};
