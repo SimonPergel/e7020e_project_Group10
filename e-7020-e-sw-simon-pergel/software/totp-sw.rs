@@ -45,7 +45,7 @@ let totp = Totp:: new(
     fn gen_OTP(mut cx: usb_interrupt::Context) {
 
         // get current time for rtc(real time clock)
-        let unix_time: u64 = rtc_get_unic_time();
+        let unix_time: u64 = rtc_get_unix_time();
 
         // generate OPT
         let opt = totp.generate_at(unix_time);
@@ -53,3 +53,5 @@ let totp = Totp:: new(
          
         
     }
+
+    
