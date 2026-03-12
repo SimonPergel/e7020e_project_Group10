@@ -44,6 +44,9 @@ const TIME_STEP: u64 = 30;
 const DIGITS: u32 = 6;
 const TIMER_HZ: u32 = 1000;
 
+type Led = hal::gpio::Pin<hal::gpio::Output<hal::gpio::PushPull>>;
+type Instant = TimerInstantU64<TIMER_HZ>;
+
 mod totp {
         // TOTP module
 }
@@ -77,9 +80,9 @@ mod app {
 
     #[local]
     struct Local {
-        1led1: Led,              // P0.13
+        led1: Led,              // P0.13
         led_mirror: Led,        // P1.3
-        button: hal::gpio::Pin<hal::gpio::Input<hal::gpio::PullUp>>,
+        //button: hal::gpio::Pin<hal::gpio::Input<hal::gpio::PullUp>>,
         usb_dev: usb_device::device::UsbDevice<'static, Usbd<UsbPeripheral<'static>>>,   // This controlls transfers and all USB protocol handling
         serial: SerialPort<'static, Usbd<UsbPeripheral<'static>>>,                        // The CDC-ACM serial interface ( the virtual COM port), read from and write to
         buf: [u8;64],                                                                     // 64  byte buffer used for reading and incoming USB data
@@ -121,8 +124,8 @@ mod app {
         let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
 
         // Init button
-        let port0 = P0Parts::new(device.P0);
-        let button = port0.p0_11.into_pullup_input().degrade();
+       // let port0 = P0Parts::new(device.P0);
+       // let button = port0.p0_11.into_pullup_input().degrade();
 
         //let usb_bus = cx.local.usb_bus.as_ref().unwrap();
         let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
@@ -143,7 +146,7 @@ mod app {
         blink::spawn_at(start_blink, start_blink).unwrap();
 
         #[allow(unreachable_code)]
-        (Shared { unix_time: 0,}, Local { button, usb_dev, serial, buf:[0u8; 64]}, init::Monotonics(mono))
+        (Shared { unix_time: 0, duty: 50, period_ms: 1000, running: true}, Local {led1,led_mirror, usb_dev, serial, buf:[0u8; 64]}, init::Monotonics(mono))
     }
 
     // Software PWM using duty from Shared
@@ -190,8 +193,8 @@ mod app {
 
 
     // When the button is pressed and generate the OPT code and display it
-    #[task(binds = GPIOTE, shared = [unix_time])]
-    fn button (mut cx: button::Context){
+   // #[task(binds = GPIOTE, shared = [unix_time])]
+   // fn button (mut cx: button::Context){
 
         // Calculate the current time
        // let time = cx.shared.unix_time.lock(|t| *t);
@@ -199,9 +202,9 @@ mod app {
         //let opt = totp::generate(SECRET, time);
 
        // display::show(opt)
-    }
+  //  }
     // When USB is connected -> send OPT
-    #[task(binds = USBD, shared = [unix_time])]
+    #[task(binds = USBD, priority = 1, shared = [unix_time, duty, period_ms, running], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 10] = [0; 10]])]
     fn usb_interrupt(mut cx: usb_interrupt::Context){
         // Calculate the current time
        // let time = cx.shared.unix_time.lock(|t| *t);
@@ -221,7 +224,7 @@ mod app {
         if !usb_dev.poll(&mut [serial]) {
                 return;
         }
-        rprintln!("usb interrupt!");
+        //rprintln!("usb interrupt!");
         // Read data
         let Ok(count) = serial.read(buf) else {return};   // if somthing has been recived, store it temporary in buf
         if count == 0 {
@@ -293,7 +296,4 @@ mod led {
   
     }
 }    
-
-
-
 
