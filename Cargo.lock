@@ -25,6 +25,7 @@ dependencies = [
  "dwt-systick-monotonic",
  "embedded-graphics",
  "embedded-hal 0.2.7",
+ "embedded-storage",
  "nb 1.1.0",
  "nrf52833-hal",
  "nrf52840-hal",
