@@ -50,6 +50,27 @@ type FlashNvmc = hal::nvmc::Nvmc<hal::pac::NVMC>;
 
 mod totp {
     // TOTP module
+
+    use super::*;
+
+   """ use otp::{Totp, Algorithm, Secret};
+
+    pub fn generate(secret: &[u8], unix_time: u64) -> u32 {
+        let totp = Totp::new(
+            Algorithm::SHA1,
+            "dev".into(),
+            "user".into(),
+            super::DIGITS,
+            super::TIME_STEP as u32,
+            Secret::from_bytes(secret),
+        );
+        totp.generate(unix_time)
+    }
+
+    // init oneces
+
+"""
+
 }
 
 mod display {
@@ -134,13 +155,19 @@ mod app {
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = Systick<TIMER_HZ>;
 
+    // totp
+    use otp::{Totp, Algorithm, Secret};
+
+
     #[shared]
     struct Shared {
+        totp: Totp,
         unix_time: u64,
         duty: u8, // Basically we want to share state between UART task(data_in) and Blik task(blink)
         period_ms: u32, // derived from frequency
         running: bool, // start and stoprunning: bool,  // start and stop
         nvmc: FlashNvmc, // keep NVMC as a shared resource
+        
     }
 
     #[local]
@@ -195,6 +222,30 @@ mod app {
         // let port0 = P0Parts::new(device.P0);
         // let button = port0.p0_11.into_pullup_input().degrade();
 
+        // Allocates a mut fixed size byte array on the stack, every element is initialized to 0u8
+        // Rust requires a pre-allocate the space 
+        let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
+
+        // returns the actual number of bytes written into the buffer, need real length for correct slicing later
+        // writes the actual secret key from NVM into beginning of secret_buf
+        let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
+
+        // takes the valid portion of the buffer, convert bytes into secret type, Secret is a safe wrapper around the secret key
+        let secret = Secret::from_bytes(&secret_buf[..len]); 
+
+
+        // Initialize the totp intstance, source - https://docs.rs/totp-rs/latest/totp_rs/
+        let totp = Totp::new(               // creates a totp generator
+            Algorithm::SHA1,
+            "dev".into(),                   // Just a label, issuer name (e.g discord)          
+            "user".into(),                  // Account name
+            super::DIGITS,                  // number of digits in the generated code
+            super::TIME_STEP as u32,        // time window the code should be valid
+            secret,     
+        );
+        totp.generate_at(unix_time)
+    }
+
         //let usb_bus = cx.local.usb_bus.as_ref().unwrap();
         let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
 
@@ -219,6 +270,7 @@ mod app {
         #[allow(unreachable_code)]
         (
             Shared {
+                totp,
                 unix_time: 0,
                 duty: 50,
                 period_ms: 1000,
@@ -351,6 +403,11 @@ mod app {
                             let now = monotonics::now();
                             let _ = write!(serial, "Stopped\r\n").ok();
                         }
+                        // Handles the stop command
+                        Ok(Command::Time(t)) => {
+                            cx.shared.unix_time.lock(|time| *time = t); 
+                            let _ = write!(serial, "Unix time set to\r\n", t).ok();
+                        }
                         Err(e) => {
                             rprintln!("Parse error {:?}", e);
                         }
@@ -364,7 +421,7 @@ mod app {
             }
         }
     }
-}
+
 mod led {
     use embedded_hal::digital::v2::OutputPin;
 

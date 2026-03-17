@@ -11,6 +11,7 @@ pub enum Command {
     Duty(u8),
     Start,
     Stop,
+    Time(u64),          // varible for Unix time
 }
 
 /// Parse a byte slice to an `Option<Command>`
@@ -146,6 +147,11 @@ pub fn parse_result(bytes: &[u8]) -> Result<Command, Error> {
             let v: u8 = next.parse().map_err(|_| Error::ArgError)?;
             Ok(Command::Duty(v))
         }
+        "time" => {     // handle TIME command
+            let next = split.next().ok_or(Error::ArgMissing)?;
+            let v: u8 = next.parse().map_err(|_| Error::ArgError)?;
+            Ok(Command::Time(t))
+        }
         _ => Err(Error::CommandNotFound)?,
     };
     match split.next() {
@@ -228,4 +234,26 @@ mod test_parse_result {
             Err(Error::ArgError)                  
         );
     }
+    #[test]
+    fn test_parse_result_time_ok() {            // The input is a valid command
+        assert_eq!(
+            parse_result(b"time 1710000000"),
+            Ok(Command::Time(1710000000))                // return succesfull result 
+        );
+    }
+    #[test]
+    fn test_parse_result_time_missing() {            // The input command is missing
+        assert_eq!(
+            parse_result(b"time"),
+            Err(Error::ArgMissing)                 
+        );
+    }
+    #[test]
+    fn test_parse_result_time_invalid() {            // The input is a invalid command
+        assert_eq!(
+            parse_result(b"time hej"),
+            Err(Error::ArgError)                  
+        );
+    }
+    
 }
