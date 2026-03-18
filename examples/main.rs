@@ -306,149 +306,149 @@ mod app {
             init::Monotonics(mono),
         )
     }
-}
 
-// Software PWM using duty from Shared
-#[task(shared = [duty, period_ms, running], local = [cnt: u32 = 0, led1, led_mirror, is_on: bool = false])]
-fn blink(mut cx: blink::Context, instant: Instant) {
-    let duty = cx.shared.duty.lock(|d| *d); // This ensures safe access to the shared data
-    let period_ms = cx.shared.period_ms.lock(|d| *d);
-    let running = cx.shared.running.lock(|d| *d);
+    // Software PWM using duty from Shared
+    #[task(shared = [duty, period_ms, running], local = [cnt: u32 = 0, led1, led_mirror, is_on: bool = false])]
+    fn blink(mut cx: blink::Context, instant: Instant) {
+        let duty = cx.shared.duty.lock(|d| *d); // This ensures safe access to the shared data
+        let period_ms = cx.shared.period_ms.lock(|d| *d);
+        let running = cx.shared.running.lock(|d| *d);
 
-    // STOP command -> led should be forced OFF and no recheduling
-    if !running {
-        led::led_off(cx.local.led1); // P0.13 -> off
-        led::led_off(cx.local.led_mirror); // P1.13 -> off
-        *cx.local.is_on = false;
-        return;
-    }
-
-    //let period_ms = 1000;
-    let on_time = period_ms * duty as u32 / 100;
-    let off_time = period_ms - on_time;
-
-    // If LED is currently ON -> turn OFF
-    if *cx.local.is_on {
-        led::led_off(cx.local.led1); // P0.13 -> off
-        led::led_off(cx.local.led_mirror); // P1.13 -> off
-        *cx.local.is_on = false;
-        if running {
-            blink::spawn_at(instant + off_time.millis(), instant + off_time.millis()).unwrap();
+        // STOP command -> led should be forced OFF and no recheduling
+        if !running {
+            led::led_off(cx.local.led1); // P0.13 -> off
+            led::led_off(cx.local.led_mirror); // P1.13 -> off
+            *cx.local.is_on = false;
+            return;
         }
 
-    // IF its OFF -> turn ON
-    } else {
-        led::led_on(cx.local.led1); // P0.13 -> on
-        led::led_on(cx.local.led_mirror); // P1.13 -> on
-        *cx.local.is_on = true;
-        if running {
-            blink::spawn_at(instant + on_time.millis(), instant + on_time.millis()).unwrap();
+        //let period_ms = 1000;
+        let on_time = period_ms * duty as u32 / 100;
+        let off_time = period_ms - on_time;
+
+        // If LED is currently ON -> turn OFF
+        if *cx.local.is_on {
+            led::led_off(cx.local.led1); // P0.13 -> off
+            led::led_off(cx.local.led_mirror); // P1.13 -> off
+            *cx.local.is_on = false;
+            if running {
+                blink::spawn_at(instant + off_time.millis(), instant + off_time.millis()).unwrap();
+            }
+
+        // IF its OFF -> turn ON
+        } else {
+            led::led_on(cx.local.led1); // P0.13 -> on
+            led::led_on(cx.local.led_mirror); // P1.13 -> on
+            *cx.local.is_on = true;
+            if running {
+                blink::spawn_at(instant + on_time.millis(), instant + on_time.millis()).unwrap();
+            }
         }
     }
-}
 
-// When the button is pressed and generate the OPT code and display it
-// #[task(binds = GPIOTE, shared = [unix_time])]
-// fn button (mut cx: button::Context){
+    // When the button is pressed and generate the OPT code and display it
+    // #[task(binds = GPIOTE, shared = [unix_time])]
+    // fn button (mut cx: button::Context){
 
-// Calculate the current time
-// let time = cx.shared.unix_time.lock(|t| *t);
-// caculate the right OPT code based on the time
-//let opt = totp::generate(SECRET, time);
-
-// display::show(opt)
-//  }
-// When USB is connected -> send OPT
-#[task(binds = USBD, priority = 1, shared = [unix_time, duty, period_ms, running, nvmc], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]])]
-fn usb_interrupt(mut cx: usb_interrupt::Context) {
     // Calculate the current time
     // let time = cx.shared.unix_time.lock(|t| *t);
     // caculate the right OPT code based on the time
     //let opt = totp::generate(SECRET, time);
 
-    //  usb_keyboard::send::code(opt);
-    let usb_dev = cx.local.usb_dev;
-    let serial = cx.local.serial;
-    let buf = cx.local.buf; // Initial buffer that hold the incomming bytes from serial port
-    let len = cx.local.len; // this is the counter that tracks how many characters has been stores in data_arr
-    let data_arr = cx.local.data_arr; // this is like a small buffer to store incomming characters extracted from the buf-buffer
+    // display::show(opt)
+    //  }
+    // When USB is connected -> send OPT
+    #[task(binds = USBD, priority = 1, shared = [unix_time, duty, period_ms, running, nvmc], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]])]
+    fn usb_interrupt(mut cx: usb_interrupt::Context) {
+        // Calculate the current time
+        // let time = cx.shared.unix_time.lock(|t| *t);
+        // caculate the right OPT code based on the time
+        //let opt = totp::generate(SECRET, time);
 
-    // IMPORTANTE: Each time a command is sent from cutecom, the characters dont come all att ones, just one byte at the time?
+        //  usb_keyboard::send::code(opt);
+        let usb_dev = cx.local.usb_dev;
+        let serial = cx.local.serial;
+        let buf = cx.local.buf; // Initial buffer that hold the incomming bytes from serial port
+        let len = cx.local.len; // this is the counter that tracks how many characters has been stores in data_arr
+        let data_arr = cx.local.data_arr; // this is like a small buffer to store incomming characters extracted from the buf-buffer
 
-    // checks whether new data has arrived, and if this is true call serial.read() or serial.write(). There is work to do
-    if !usb_dev.poll(&mut [serial]) {
-        return;
-    }
-    //rprintln!("usb interrupt!");
-    // Read data
-    let Ok(count) = serial.read(buf) else { return }; // if somthing has been recived, store it temporary in buf
-    if count == 0 {
-        return;
-    }
+        // IMPORTANTE: Each time a command is sent from cutecom, the characters dont come all att ones, just one byte at the time?
 
-    // loop through each byte indi.
-    for &c in &buf[..count] {
-        let _ = serial.write(&[c]); // Echo
-                                    // If it has enter 13, treat it as a complete commad and parse and excecute it(then reset len = 0)
-                                    // if not, store the byte into data_arr at index "len" abd increament "len"
-        match c {
-            13 => {
-                // CR
-                let slice = &data_arr[0..*len]; // extract (slice) to get the refernce to the command
-                                                // Takes the slice and tries to match it with the right handler
-                match parse_result(slice) {
-                    Ok(Command::Duty(val)) => {
-                        cx.shared.duty.lock(|d| *d = val);
-                        rprintln!("Duty set to {}", val);
-                        let _ = write!(serial, "Duty set to {}\r\n", val).ok();
+        // checks whether new data has arrived, and if this is true call serial.read() or serial.write(). There is work to do
+        if !usb_dev.poll(&mut [serial]) {
+            return;
+        }
+        //rprintln!("usb interrupt!");
+        // Read data
+        let Ok(count) = serial.read(buf) else { return }; // if somthing has been recived, store it temporary in buf
+        if count == 0 {
+            return;
+        }
+
+        // loop through each byte indi.
+        for &c in &buf[..count] {
+            let _ = serial.write(&[c]); // Echo
+                                        // If it has enter 13, treat it as a complete commad and parse and excecute it(then reset len = 0)
+                                        // if not, store the byte into data_arr at index "len" abd increament "len"
+            match c {
+                13 => {
+                    // CR
+                    let slice = &data_arr[0..*len]; // extract (slice) to get the refernce to the command
+                                                    // Takes the slice and tries to match it with the right handler
+                    match parse_result(slice) {
+                        Ok(Command::Duty(val)) => {
+                            cx.shared.duty.lock(|d| *d = val);
+                            rprintln!("Duty set to {}", val);
+                            let _ = write!(serial, "Duty set to {}\r\n", val).ok();
+                        }
+                        // Handles Frequency command
+                        Ok(Command::FrequencyHz(freq)) => {
+                            let period_ms = 1000 / freq; // Converts the desired frequency to the time period in miliseconds
+                            cx.shared.period_ms.lock(|p| *p = period_ms); // updated the shared varible that hold the current value of the period_ms
+                            rprintln!("Frequency set to {}", freq);
+                            let _ = write!(serial, "Duty set to {} Hz\r\n", freq).ok();
+                            // Sends back confirmation to the serial terminal in CuteCom
+                        }
+                        // Handles the SetSecret command
+                        Ok(Command::SetSecret(secret)) => {
+                            cx.shared
+                                .nvmc
+                                .lock(|n| secret_storage::write_secret(n, secret)); // Writes the secret to flash memory using the NVMC peripheral
+                            rprintln!("Secret set");
+                            let _ = write!(serial, "Secret set\r\n").ok();
+                        }
+                        Ok(Command::PrintSecret) => {
+                            cx.shared.nvmc.lock(|n| secret_storage::print_secret(n)); // Reads the secret from flash memory and prints it to the RTT terminal
+                            let _ = write!(serial, "Secret printed to RTT terminal\r\n").ok();
+                        }
+                        // Handles the Start command
+                        Ok(Command::Start) => {
+                            cx.shared.running.lock(|r| *r = true); // setting the running boolen to true, signaling the blink function to start
+                            let now = monotonics::now(); // Gets the current mono timer timestamp, needed because blink::spawn_at requires a timestamp
+                            blink::spawn_at(now, now).ok(); // Immediate scheduling the blink function to runn now( current time extracted from the line above)
+                            let _ = write!(serial, "Started\r\n").ok();
+                        }
+                        // Handles the stop command
+                        Ok(Command::Stop) => {
+                            cx.shared.running.lock(|r| *r = false); // Sets the shared running boolen to false
+                            let now = monotonics::now();
+                            let _ = write!(serial, "Stopped\r\n").ok();
+                        }
+                        // Handles the stop command
+                        Ok(Command::Time(t)) => {
+                            cx.shared.unix_time.lock(|time| *time = t);
+                            let _ = write!(serial, "Unix time set to\r\n", t).ok();
+                        }
+                        Err(e) => {
+                            rprintln!("Parse error {:?}", e);
+                        }
                     }
-                    // Handles Frequency command
-                    Ok(Command::FrequencyHz(freq)) => {
-                        let period_ms = 1000 / freq; // Converts the desired frequency to the time period in miliseconds
-                        cx.shared.period_ms.lock(|p| *p = period_ms); // updated the shared varible that hold the current value of the period_ms
-                        rprintln!("Frequency set to {}", freq);
-                        let _ = write!(serial, "Duty set to {} Hz\r\n", freq).ok();
-                        // Sends back confirmation to the serial terminal in CuteCom
-                    }
-                    // Handles the SetSecret command
-                    Ok(Command::SetSecret(secret)) => {
-                        cx.shared
-                            .nvmc
-                            .lock(|n| secret_storage::write_secret(n, secret)); // Writes the secret to flash memory using the NVMC peripheral
-                        rprintln!("Secret set");
-                        let _ = write!(serial, "Secret set\r\n").ok();
-                    }
-                    Ok(Command::PrintSecret) => {
-                        cx.shared.nvmc.lock(|n| secret_storage::print_secret(n)); // Reads the secret from flash memory and prints it to the RTT terminal
-                        let _ = write!(serial, "Secret printed to RTT terminal\r\n").ok();
-                    }
-                    // Handles the Start command
-                    Ok(Command::Start) => {
-                        cx.shared.running.lock(|r| *r = true); // setting the running boolen to true, signaling the blink function to start
-                        let now = monotonics::now(); // Gets the current mono timer timestamp, needed because blink::spawn_at requires a timestamp
-                        blink::spawn_at(now, now).ok(); // Immediate scheduling the blink function to runn now( current time extracted from the line above)
-                        let _ = write!(serial, "Started\r\n").ok();
-                    }
-                    // Handles the stop command
-                    Ok(Command::Stop) => {
-                        cx.shared.running.lock(|r| *r = false); // Sets the shared running boolen to false
-                        let now = monotonics::now();
-                        let _ = write!(serial, "Stopped\r\n").ok();
-                    }
-                    // Handles the stop command
-                    Ok(Command::Time(t)) => {
-                        cx.shared.unix_time.lock(|time| *time = t);
-                        let _ = write!(serial, "Unix time set to\r\n", t).ok();
-                    }
-                    Err(e) => {
-                        rprintln!("Parse error {:?}", e);
-                    }
+                    *len = 0;
                 }
-                *len = 0;
-            }
-            _ => {
-                data_arr[*len] = c;
-                *len = usize::min(*len + 1, data_arr.len() - 1); // len always point to the next free position
+                _ => {
+                    data_arr[*len] = c;
+                    *len = usize::min(*len + 1, data_arr.len() - 1); // len always point to the next free position
+                }
             }
         }
     }
