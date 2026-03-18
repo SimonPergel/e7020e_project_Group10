@@ -56,6 +56,7 @@ mod usb_keyboard {
 mod totp {
     use hmac::{Hmac, Mac};
     use sha1::Sha1;
+    use base32ct::{Base32, Encodeing};
 
     // Type alias for HMAC-SHA1
     type HmacSha1 = Hmac<Sha1>;
@@ -351,7 +352,16 @@ mod app {
     }
 
         let secret = &secret_buf[..len];
-        let otp_code = totp::generate_totp(secret, cx.shared.unix_time.lock(|t| *t), DIGITS, TIME_STEP);
+
+        let mut decode = [0u8; 32]:
+        let decode_len = Base32::decode(secret, &mut decoded).unwrap_or(0);
+        if decoded_len == 0 {
+            rprintln!("failed to decode via Base32!");
+            return;
+        }
+        let decoded_secret = &decoded[..decoded_len];
+
+        let otp_code = totp::generate_totp(decoded_secret, cx.shared.unix_time.lock(|t| *t), DIGITS, TIME_STEP);
         rprintln!("OTP code: {}", otp_code);
     }
     // Software PWM using duty from Shared
