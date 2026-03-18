@@ -9,9 +9,11 @@
 pub enum Command {
     FrequencyHz(u32),
     Duty(u8),
+    SetSecret(&'a [u8]),
+    PrintSecret,
     Start,
     Stop,
-    Time(u64),          // varible for Unix time
+    Time(u64), // varible for Unix time
 }
 
 /// Parse a byte slice to an `Option<Command>`
@@ -49,6 +51,17 @@ pub fn parse(bytes: &[u8]) -> Option<Command> {
             let str = core::str::from_utf8(next).ok()?;
             let v: u8 = str.parse().ok()?;
             Some(Command::Duty(v))
+        }
+        b"setsecret" => {
+            let next = split.next()?;
+            Some(Command::SetSecret(next))
+        }
+        b"printsecret" => Some(Command::PrintSecret),
+        b"time" => {
+            let next = split.next()?;
+            let str = core::str::from_utf8(next).ok()?;
+            let t: u8 = str.parse().ok()?;
+            Some(Command::Time(t))
         }
         _ => None,
     }
@@ -88,12 +101,11 @@ mod test_parse {
     }
     #[test]
     fn test_parse_duty_ok() {
-        assert_eq!(parse(b"duty 10"), Some(Command::Duty(10)));       // this checks that the parser returns the correct Command::Duty((10)) value
+        assert_eq!(parse(b"duty 10"), Some(Command::Duty(10))); // this checks that the parser returns the correct Command::Duty((10)) value
     }
     fn test_parse_duty_error() {
-        assert_eq!(parse(b"duty 300"), None);       // if the user enters a duty value that is out of range, the parser must rejct it and return nothing
+        assert_eq!(parse(b"duty 300"), None); // if the user enters a duty value that is out of range, the parser must rejct it and return nothing
     }
-
 }
 
 /// Error type for parse_result
@@ -147,7 +159,13 @@ pub fn parse_result(bytes: &[u8]) -> Result<Command, Error> {
             let v: u8 = next.parse().map_err(|_| Error::ArgError)?;
             Ok(Command::Duty(v))
         }
-        "time" => {     // handle TIME command
+        "setsecret" => {
+            let next = split.next().ok_or(Error::ArgMissing)?;
+            Ok(Command::SetSecret(next.as_bytes()))
+        }
+        "printsecret" => Ok(Command::PrintSecret),
+        "time" => {
+            // handle TIME command
             let next = split.next().ok_or(Error::ArgMissing)?;
             let v: u8 = next.parse().map_err(|_| Error::ArgError)?;
             Ok(Command::Time(t))
@@ -214,46 +232,39 @@ mod test_parse_result {
     }
     // Excercise 4 parse-result tests
     #[test]
-    fn test_parse_result_duty_ok() {            // The input is a valid command
+    fn test_parse_result_duty_ok() {
+        // The input is a valid command
         assert_eq!(
             parse_result(b"duty 42"),
-            Ok(Command::Duty(42))                // return succesfull result 
+            Ok(Command::Duty(42)) // return succesfull result
         );
     }
     #[test]
-    fn test_parse_result_duty_missing() {            // The input command is missing
-        assert_eq!(
-            parse_result(b"duty"),
-            Err(Error::ArgMissing)                 
-        );
+    fn test_parse_result_duty_missing() {
+        // The input command is missing
+        assert_eq!(parse_result(b"duty"), Err(Error::ArgMissing));
     }
     #[test]
-    fn test_parse_result_duty_invalid() {            // The input is a invalid command
-        assert_eq!(
-            parse_result(b"duty hej"),
-            Err(Error::ArgError)                  
-        );
+    fn test_parse_result_duty_invalid() {
+        // The input is a invalid command
+        assert_eq!(parse_result(b"duty hej"), Err(Error::ArgError));
     }
     #[test]
-    fn test_parse_result_time_ok() {            // The input is a valid command
+    fn test_parse_result_time_ok() {
+        // The input is a valid command
         assert_eq!(
             parse_result(b"time 1710000000"),
-            Ok(Command::Time(1710000000))                // return succesfull result 
+            Ok(Command::Time(1710000000)) // return succesfull result
         );
     }
     #[test]
-    fn test_parse_result_time_missing() {            // The input command is missing
-        assert_eq!(
-            parse_result(b"time"),
-            Err(Error::ArgMissing)                 
-        );
+    fn test_parse_result_time_missing() {
+        // The input command is missing
+        assert_eq!(parse_result(b"time"), Err(Error::ArgMissing));
     }
     #[test]
-    fn test_parse_result_time_invalid() {            // The input is a invalid command
-        assert_eq!(
-            parse_result(b"time hej"),
-            Err(Error::ArgError)                  
-        );
+    fn test_parse_result_time_invalid() {
+        // The input is a invalid command
+        assert_eq!(parse_result(b"time hej"), Err(Error::ArgError));
     }
-    
 }

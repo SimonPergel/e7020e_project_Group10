@@ -35,8 +35,6 @@ use {
 };
 
 // Global constants
-//const SECRET: &[u8] = b"supersecret";           // need to be changed, should not be saved in a varible, should be send to the pcb via cutecom
-
 const TIME_STEP: u64 = 30;
 const DIGITS: u32 = 6;
 const TIMER_HZ: u32 = 1000;
@@ -45,33 +43,7 @@ type Led = hal::gpio::Pin<hal::gpio::Output<hal::gpio::PushPull>>;
 type Instant = TimerInstantU64<TIMER_HZ>;
 
 // Types for flash storage and NVMC peripheral, used in the secret_storage module to read/write secrets to flash memory
-type FlashStorageBuf = [u8; secret_storage::PAGE_SIZE as usize];
 type FlashNvmc = hal::nvmc::Nvmc<hal::pac::NVMC>;
-
-mod totp {
-    // TOTP module
-
-    use super::*;
-
-   """ use otp::{Totp, Algorithm, Secret};
-
-    pub fn generate(secret: &[u8], unix_time: u64) -> u32 {
-        let totp = Totp::new(
-            Algorithm::SHA1,
-            "dev".into(),
-            "user".into(),
-            super::DIGITS,
-            super::TIME_STEP as u32,
-            Secret::from_bytes(secret),
-        );
-        totp.generate(unix_time)
-    }
-
-    // init oneces
-
-"""
-
-}
 
 mod display {
     // if the bords is not connected to the pc, a button press should display the OPT code
@@ -85,8 +57,10 @@ mod usb_keyboard {
 mod secret_storage {
     // use super::*;
     use crate::FlashNvmc;
+    // use otp::Secret;
     // I need this to be able to read/write to flash memory
     use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
+    use rtt_target::rprintln;
 
     pub const FLASH_SIZE: u32 = 512 * 1024; // 512 kB flash memory, might be unnecessary to define this
     pub const PAGE_SIZE: u32 = 4096; // 4 kB page size
@@ -94,13 +68,12 @@ mod secret_storage {
 
     // This is to be able to validate that the secret was written to flash correctly
     const MAGIC: u32 = u32::from_le_bytes(*b"SECR");
-    pub const SECRET_MAX_LEN: usize = 24; // Max length of the secret, we set it to 24 so it's word aligned.
+    pub const SECRET_MAX_LEN: usize = 32; // Max length of the secret, we set it to 32 bytes
     const HEADER_SIZE: usize = 4 + 4; // MAGIC (4 bytes) + length (4 bytes)
     const RECORD_SIZE: usize = HEADER_SIZE + SECRET_MAX_LEN; // Total size of the record to be stored in flash (32 bytes)
 
     #[inline(never)]
     pub fn write_secret(nvmc: &mut FlashNvmc, secret: &[u8]) {
-        // TODO: Implement writing the secret to flash memory using the NVMC peripheral
         if secret.is_empty() || secret.len() > SECRET_MAX_LEN {
             return; // Invalid secret length
         }
@@ -110,40 +83,86 @@ mod secret_storage {
         record[4..8].copy_from_slice(&(secret.len() as u32).to_le_bytes()); // Write the length of the secret
         record[HEADER_SIZE..HEADER_SIZE + secret.len()].copy_from_slice(secret); // Write the secret data
 
+        // rprintln!("Record length: {:?}\nRecord received: {:?}", record.len(), record);
+
+        /*
         // Write the record to flash memory
-        let _ = nvmc.erase(SECRET_PAGE_START, SECRET_PAGE_START + PAGE_SIZE); // IMPORTANT: Erase flash page before writing
-        let _ = nvmc.write(SECRET_PAGE_START, &record); // Write the record to flash
+        match nvmc.erase(0, PAGE_SIZE) {
+            // This was for debugging purposes, couldn't get it to properly write to memory and wasnt sure why...
+            Ok(_) => rprintln!("Flash page erased successfully"),
+            Err(e) => {
+                rprintln!("Failed to erase flash page: {:?}", e);
+                return; // Failed to erase flash, return early
+            }
+        }
+
+        match nvmc.write(0, &record) {
+            // Also for debugging purposes
+            Ok(_) => rprintln!("Secret written to flash successfully"),
+            Err(e) => {
+                rprintln!("Failed to write secret to flash: {:?}", e);
+                return; // Failed to write to flash, return early
+            }
+        }
+        */
+
+        // Clear the page and then write the record, don't want to spam the RTT terminal with success messages.
+        if nvmc.erase(0, PAGE_SIZE).is_err() {
+            rprintln!("Failed to erase flash page");
+            return;
+        }
+        if nvmc.write(0, &record).is_err() {
+            rprintln!("Failed to write secret to flash");
+            return;
+        }
     }
 
     #[inline(never)]
     pub fn read_secret(nvmc: &mut FlashNvmc, buffer: &mut [u8]) -> usize {
-        // TODO: Implement reading the secret from flash memory into the provided buffer
         let mut header = [0u8; HEADER_SIZE];
-        if nvmc.read(SECRET_PAGE_START, &mut header).is_err() {
-            return 0; // Failed to read header, return 0 to indicate no valid secret
+
+        // Offset 0 since we mapped nvmc to the secret page.
+        if let Err(e) = nvmc.read(0, &mut header) {
+            rprintln!("Failed to read secret header: {:?}", e);
+            return 0;
         }
 
         // Validate the magic number to ensure we have a valid record
         let magic = u32::from_le_bytes([header[0], header[1], header[2], header[3]]); // Extract the magic number
         if magic != MAGIC {
-            return 0; // Invalid magic number, no valid secret stored
+            rprintln!("Invalid magic number in flash, no valid secret stored");
+            return 0;
         }
 
         // Validate the length
         let len = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize; // Extract the length of the secret
-        if len == 0 || len > SECRET_MAX_LEN {
+        if len == 0 || len > SECRET_MAX_LEN || len > buffer.len() {
+            rprintln!(
+                "Secret length in flash is invalid, missing or too big for buffer: {}",
+                len
+            );
             return 0; // Invalid length, return 0 to indicate no valid secret
         }
 
         // Read the secret data into the provided buffer
-        if nvmc
-            .read(SECRET_PAGE_START + HEADER_SIZE as u32, &mut buffer[..len])
-            .is_err()
-        {
-            return 0; // Failed to read secret data, return 0 to indicate no valid secret
+        if let Err(e) = nvmc.read(HEADER_SIZE as u32, &mut buffer[..len]) {
+            rprintln!("Failed to read secret data from flash: {:?}", e);
+            return 0;
         }
 
         len // Return the length of the secret read into the buffer
+    }
+
+    #[inline(never)]
+    // This was also for debugging purposes when we needed to verify that the secret was actually written to flash memory
+    pub fn print_secret(nvmc: &mut FlashNvmc) {
+        let mut buffer = [0u8; SECRET_MAX_LEN];
+        let len = read_secret(nvmc, &mut buffer);
+        if len > 0 {
+            rprintln!("Secret in flash: {:?}", &buffer[..len]);
+        } else {
+            rprintln!("No valid secret found in flash");
+        }
     }
 }
 
@@ -156,8 +175,7 @@ mod app {
     type MyMono = Systick<TIMER_HZ>;
 
     // totp
-    use otp::{Totp, Algorithm, Secret};
-
+    use otp::{Algorithm, Secret, Totp};
 
     #[shared]
     struct Shared {
@@ -167,7 +185,6 @@ mod app {
         period_ms: u32, // derived from frequency
         running: bool, // start and stoprunning: bool,  // start and stop
         nvmc: FlashNvmc, // keep NVMC as a shared resource
-        
     }
 
     #[local]
@@ -182,7 +199,6 @@ mod app {
     #[init(local = [
         usb_bus: Option<UsbBusAllocator<Usbd<UsbPeripheral<'static>>>> = None,
         clocks: Option<Clocks<hal::clocks::ExternalOscillator,hal::clocks::Internal, hal::clocks::LfOscStopped>> = None,
-        storage: FlashStorageBuf = [0xFF; secret_storage::PAGE_SIZE as usize],
     ])]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
         rtt_init_print!();
@@ -213,17 +229,23 @@ mod app {
         )));
         cx.local.usb_bus.replace(usb_bus);
 
-        //let usb_bus = cx.local.usb_bus.as_ref().unwrap();
-        let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
-
-        // Initialize NVMC peripheral for flash memory access
-        let nvmc = FlashNvmc::new(device.NVMC, cx.local.storage);
+        // Map only the last flash page to a mutable slice, we'll store the secret there.
+        let flash_page = unsafe {
+            core::slice::from_raw_parts_mut(
+                secret_storage::SECRET_PAGE_START as *mut u8,
+                secret_storage::PAGE_SIZE as usize,
+            )
+        };
+        let nvmc = FlashNvmc::new(device.NVMC, flash_page);
         // Init button
         // let port0 = P0Parts::new(device.P0);
         // let button = port0.p0_11.into_pullup_input().degrade();
 
+        //let usb_bus = cx.local.usb_bus.as_ref().unwrap();
+        let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
+
         // Allocates a mut fixed size byte array on the stack, every element is initialized to 0u8
-        // Rust requires a pre-allocate the space 
+        // Rust requires a pre-allocate the space
         let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
 
         // returns the actual number of bytes written into the buffer, need real length for correct slicing later
@@ -231,23 +253,20 @@ mod app {
         let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
 
         // takes the valid portion of the buffer, convert bytes into secret type, Secret is a safe wrapper around the secret key
-        let secret = Secret::from_bytes(&secret_buf[..len]); 
-
+        let secret = Secret::from_bytes(&secret_buf[..len]);
 
         // Initialize the totp intstance, source - https://docs.rs/totp-rs/latest/totp_rs/
-        let totp = Totp::new(               // creates a totp generator
+        let totp = Totp::new(
+            // creates a totp generator
             Algorithm::SHA1,
-            "dev".into(),                   // Just a label, issuer name (e.g discord)          
-            "user".into(),                  // Account name
-            super::DIGITS,                  // number of digits in the generated code
-            super::TIME_STEP as u32,        // time window the code should be valid
-            secret,     
+            "dev".into(),            // Just a label, issuer name (e.g discord)
+            "user".into(),           // Account name
+            super::DIGITS,           // number of digits in the generated code
+            super::TIME_STEP as u32, // time window the code should be valid
+            secret,
         );
-        totp.generate_at(unix_time)
-    }
 
-        //let usb_bus = cx.local.usb_bus.as_ref().unwrap();
-        let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
+        totp.generate_at(unix_time);
 
         let usb_dev = UsbDeviceBuilder::new(
             &cx.local.usb_bus.as_ref().unwrap(),
@@ -287,140 +306,153 @@ mod app {
             init::Monotonics(mono),
         )
     }
+}
 
-    // Software PWM using duty from Shared
-    #[task(shared = [duty, period_ms, running], local = [cnt: u32 = 0, led1, led_mirror, is_on: bool = false])]
-    fn blink(mut cx: blink::Context, instant: Instant) {
-        let duty = cx.shared.duty.lock(|d| *d); // This ensures safe access to the shared data
-        let period_ms = cx.shared.period_ms.lock(|d| *d);
-        let running = cx.shared.running.lock(|d| *d);
+// Software PWM using duty from Shared
+#[task(shared = [duty, period_ms, running], local = [cnt: u32 = 0, led1, led_mirror, is_on: bool = false])]
+fn blink(mut cx: blink::Context, instant: Instant) {
+    let duty = cx.shared.duty.lock(|d| *d); // This ensures safe access to the shared data
+    let period_ms = cx.shared.period_ms.lock(|d| *d);
+    let running = cx.shared.running.lock(|d| *d);
 
-        // STOP command -> led should be forced OFF and no recheduling
-        if !running {
-            led::led_off(cx.local.led1); // P0.13 -> off
-            led::led_off(cx.local.led_mirror); // P1.13 -> off
-            *cx.local.is_on = false;
-            return;
-        }
-
-        //let period_ms = 1000;
-        let on_time = period_ms * duty as u32 / 100;
-        let off_time = period_ms - on_time;
-
-        // If LED is currently ON -> turn OFF
-        if *cx.local.is_on {
-            led::led_off(cx.local.led1); // P0.13 -> off
-            led::led_off(cx.local.led_mirror); // P1.13 -> off
-            *cx.local.is_on = false;
-            if running {
-                blink::spawn_at(instant + off_time.millis(), instant + off_time.millis()).unwrap();
-            }
-
-        // IF its OFF -> turn ON
-        } else {
-            led::led_on(cx.local.led1); // P0.13 -> on
-            led::led_on(cx.local.led_mirror); // P1.13 -> on
-            *cx.local.is_on = true;
-            if running {
-                blink::spawn_at(instant + on_time.millis(), instant + on_time.millis()).unwrap();
-            }
-        }
+    // STOP command -> led should be forced OFF and no recheduling
+    if !running {
+        led::led_off(cx.local.led1); // P0.13 -> off
+        led::led_off(cx.local.led_mirror); // P1.13 -> off
+        *cx.local.is_on = false;
+        return;
     }
 
-    // When the button is pressed and generate the OPT code and display it
-    // #[task(binds = GPIOTE, shared = [unix_time])]
-    // fn button (mut cx: button::Context){
+    //let period_ms = 1000;
+    let on_time = period_ms * duty as u32 / 100;
+    let off_time = period_ms - on_time;
 
+    // If LED is currently ON -> turn OFF
+    if *cx.local.is_on {
+        led::led_off(cx.local.led1); // P0.13 -> off
+        led::led_off(cx.local.led_mirror); // P1.13 -> off
+        *cx.local.is_on = false;
+        if running {
+            blink::spawn_at(instant + off_time.millis(), instant + off_time.millis()).unwrap();
+        }
+
+    // IF its OFF -> turn ON
+    } else {
+        led::led_on(cx.local.led1); // P0.13 -> on
+        led::led_on(cx.local.led_mirror); // P1.13 -> on
+        *cx.local.is_on = true;
+        if running {
+            blink::spawn_at(instant + on_time.millis(), instant + on_time.millis()).unwrap();
+        }
+    }
+}
+
+// When the button is pressed and generate the OPT code and display it
+// #[task(binds = GPIOTE, shared = [unix_time])]
+// fn button (mut cx: button::Context){
+
+// Calculate the current time
+// let time = cx.shared.unix_time.lock(|t| *t);
+// caculate the right OPT code based on the time
+//let opt = totp::generate(SECRET, time);
+
+// display::show(opt)
+//  }
+// When USB is connected -> send OPT
+#[task(binds = USBD, priority = 1, shared = [unix_time, duty, period_ms, running, nvmc], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]])]
+fn usb_interrupt(mut cx: usb_interrupt::Context) {
     // Calculate the current time
     // let time = cx.shared.unix_time.lock(|t| *t);
     // caculate the right OPT code based on the time
     //let opt = totp::generate(SECRET, time);
 
-    // display::show(opt)
-    //  }
-    // When USB is connected -> send OPT
-    #[task(binds = USBD, priority = 1, shared = [unix_time, duty, period_ms, running], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 10] = [0; 10]])]
-    fn usb_interrupt(mut cx: usb_interrupt::Context) {
-        // Calculate the current time
-        // let time = cx.shared.unix_time.lock(|t| *t);
-        // caculate the right OPT code based on the time
-        //let opt = totp::generate(SECRET, time);
+    //  usb_keyboard::send::code(opt);
+    let usb_dev = cx.local.usb_dev;
+    let serial = cx.local.serial;
+    let buf = cx.local.buf; // Initial buffer that hold the incomming bytes from serial port
+    let len = cx.local.len; // this is the counter that tracks how many characters has been stores in data_arr
+    let data_arr = cx.local.data_arr; // this is like a small buffer to store incomming characters extracted from the buf-buffer
 
-        //  usb_keyboard::send::code(opt);
-        let usb_dev = cx.local.usb_dev;
-        let serial = cx.local.serial;
-        let buf = cx.local.buf; // Initial buffer that hold the incomming bytes from serial port
-        let len = cx.local.len; // this is the counter that tracks how many characters has been stores in data_arr
-        let data_arr = cx.local.data_arr; // this is like a small buffer to store incomming characters extracted from the buf-buffer
+    // IMPORTANTE: Each time a command is sent from cutecom, the characters dont come all att ones, just one byte at the time?
 
-        // IMPORTANTE: Each time a command is sent from cutecom, the characters dont come all att ones, just one byte at the time?
+    // checks whether new data has arrived, and if this is true call serial.read() or serial.write(). There is work to do
+    if !usb_dev.poll(&mut [serial]) {
+        return;
+    }
+    //rprintln!("usb interrupt!");
+    // Read data
+    let Ok(count) = serial.read(buf) else { return }; // if somthing has been recived, store it temporary in buf
+    if count == 0 {
+        return;
+    }
 
-        // checks whether new data has arrived, and if this is true call serial.read() or serial.write(). There is work to do
-        if !usb_dev.poll(&mut [serial]) {
-            return;
-        }
-        //rprintln!("usb interrupt!");
-        // Read data
-        let Ok(count) = serial.read(buf) else { return }; // if somthing has been recived, store it temporary in buf
-        if count == 0 {
-            return;
-        }
-
-        // loop through each byte indi.
-        for &c in &buf[..count] {
-            let _ = serial.write(&[c]); // Echo
-                                        // If it has enter 13, treat it as a complete commad and parse and excecute it(then reset len = 0)
-                                        // if not, store the byte into data_arr at index "len" abd increament "len"
-            match c {
-                13 => {
-                    // CR
-                    let slice = &data_arr[0..*len]; // extract (slice) to get the refernce to the command
-                                                    // Takes the slice and tries to match it with the right handler
-                    match parse_result(slice) {
-                        Ok(Command::Duty(val)) => {
-                            cx.shared.duty.lock(|d| *d = val);
-                            rprintln!("Duty set to {}", val);
-                            let _ = write!(serial, "Duty set to {}\r\n", val).ok();
-                        }
-                        // Handles Frequency command
-                        Ok(Command::FrequencyHz(freq)) => {
-                            let period_ms = 1000 / freq; // Converts the desired frequency to the time period in miliseconds
-                            cx.shared.period_ms.lock(|p| *p = period_ms); // updated the shared varible that hold the current value of the period_ms
-                            rprintln!("Frequency set to {}", freq);
-                            let _ = write!(serial, "Duty set to {} Hz\r\n", freq).ok();
-                            // Sends back confirmation to the serial terminal in CuteCom
-                        }
-                        // Handles the Start command
-                        Ok(Command::Start) => {
-                            cx.shared.running.lock(|r| *r = true); // setting the running boolen to true, signaling the blink function to start
-                            let now = monotonics::now(); // Gets the current mono timer timestamp, needed because blink::spawn_at requires a timestamp
-                            blink::spawn_at(now, now).ok(); // Immediate scheduling the blink function to runn now( current time extracted from the line above)
-                            let _ = write!(serial, "Started\r\n").ok();
-                        }
-                        // Handles the stop command
-                        Ok(Command::Stop) => {
-                            cx.shared.running.lock(|r| *r = false); // Sets the shared running boolen to false
-                            let now = monotonics::now();
-                            let _ = write!(serial, "Stopped\r\n").ok();
-                        }
-                        // Handles the stop command
-                        Ok(Command::Time(t)) => {
-                            cx.shared.unix_time.lock(|time| *time = t); 
-                            let _ = write!(serial, "Unix time set to\r\n", t).ok();
-                        }
-                        Err(e) => {
-                            rprintln!("Parse error {:?}", e);
-                        }
+    // loop through each byte indi.
+    for &c in &buf[..count] {
+        let _ = serial.write(&[c]); // Echo
+                                    // If it has enter 13, treat it as a complete commad and parse and excecute it(then reset len = 0)
+                                    // if not, store the byte into data_arr at index "len" abd increament "len"
+        match c {
+            13 => {
+                // CR
+                let slice = &data_arr[0..*len]; // extract (slice) to get the refernce to the command
+                                                // Takes the slice and tries to match it with the right handler
+                match parse_result(slice) {
+                    Ok(Command::Duty(val)) => {
+                        cx.shared.duty.lock(|d| *d = val);
+                        rprintln!("Duty set to {}", val);
+                        let _ = write!(serial, "Duty set to {}\r\n", val).ok();
                     }
-                    *len = 0;
+                    // Handles Frequency command
+                    Ok(Command::FrequencyHz(freq)) => {
+                        let period_ms = 1000 / freq; // Converts the desired frequency to the time period in miliseconds
+                        cx.shared.period_ms.lock(|p| *p = period_ms); // updated the shared varible that hold the current value of the period_ms
+                        rprintln!("Frequency set to {}", freq);
+                        let _ = write!(serial, "Duty set to {} Hz\r\n", freq).ok();
+                        // Sends back confirmation to the serial terminal in CuteCom
+                    }
+                    // Handles the SetSecret command
+                    Ok(Command::SetSecret(secret)) => {
+                        cx.shared
+                            .nvmc
+                            .lock(|n| secret_storage::write_secret(n, secret)); // Writes the secret to flash memory using the NVMC peripheral
+                        rprintln!("Secret set");
+                        let _ = write!(serial, "Secret set\r\n").ok();
+                    }
+                    Ok(Command::PrintSecret) => {
+                        cx.shared.nvmc.lock(|n| secret_storage::print_secret(n)); // Reads the secret from flash memory and prints it to the RTT terminal
+                        let _ = write!(serial, "Secret printed to RTT terminal\r\n").ok();
+                    }
+                    // Handles the Start command
+                    Ok(Command::Start) => {
+                        cx.shared.running.lock(|r| *r = true); // setting the running boolen to true, signaling the blink function to start
+                        let now = monotonics::now(); // Gets the current mono timer timestamp, needed because blink::spawn_at requires a timestamp
+                        blink::spawn_at(now, now).ok(); // Immediate scheduling the blink function to runn now( current time extracted from the line above)
+                        let _ = write!(serial, "Started\r\n").ok();
+                    }
+                    // Handles the stop command
+                    Ok(Command::Stop) => {
+                        cx.shared.running.lock(|r| *r = false); // Sets the shared running boolen to false
+                        let now = monotonics::now();
+                        let _ = write!(serial, "Stopped\r\n").ok();
+                    }
+                    // Handles the stop command
+                    Ok(Command::Time(t)) => {
+                        cx.shared.unix_time.lock(|time| *time = t);
+                        let _ = write!(serial, "Unix time set to\r\n", t).ok();
+                    }
+                    Err(e) => {
+                        rprintln!("Parse error {:?}", e);
+                    }
                 }
-                _ => {
-                    data_arr[*len] = c;
-                    *len = usize::min(*len + 1, data_arr.len() - 1); // len always point to the next free position
-                }
+                *len = 0;
+            }
+            _ => {
+                data_arr[*len] = c;
+                *len = usize::min(*len + 1, data_arr.len() - 1); // len always point to the next free position
             }
         }
     }
+}
 
 mod led {
     use embedded_hal::digital::v2::OutputPin;
