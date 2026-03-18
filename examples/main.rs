@@ -56,7 +56,6 @@ mod usb_keyboard {
 mod totp {
     use hmac::{Hmac, Mac};
     use sha1::Sha1;
-    use base32ct::{Base32, Encodeing};
 
     // Type alias for HMAC-SHA1
     type HmacSha1 = Hmac<Sha1>;
@@ -73,10 +72,10 @@ mod totp {
         let code = ((u32::from(hash[offset]) & 0x7f) << 24
             | (u32::from(hash[offset + 1]) & 0xff) << 16
             | (u32::from(hash[offset + 2]) & 0xff) << 8
-            | (u32::from(hash[offset + 3]) & 0xff)) % 10u32.pow(digits);
+            | (u32::from(hash[offset + 3]) & 0xff))
+            % 10u32.pow(digits);
         code
     }
-    
 }
 
 mod secret_storage {
@@ -199,7 +198,6 @@ mod app {
     use usbd_serial::embedded_io::Write as _;
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = Systick<TIMER_HZ>;
-   
 
     // totp
     //use otp::{Algorithm, Secret, Totp};
@@ -276,15 +274,14 @@ mod app {
 
         // returns the actual number of bytes written into the buffer, need real length for correct slicing later
         // writes the actual secret key from NVM into beginning of secret_buf
-       // let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
+        // let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
 
         // takes the valid portion of the buffer, convert bytes into secret type, Secret is a safe wrapper around the secret key
         //let secret = Secret::from_bytes(&secret_buf[..len]).unwrap();       // extract the result, if not ok --> Panic! Must FIX
 
-       // let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
+        // let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
 
-       // let otp_code = totp.generate(unix_time); // unix_time should be in seconds
-        
+        // let otp_code = totp.generate(unix_time); // unix_time should be in seconds
 
         let usb_dev = UsbDeviceBuilder::new(
             &cx.local.usb_bus.as_ref().unwrap(),
@@ -323,45 +320,39 @@ mod app {
             init::Monotonics(mono),
         )
     }
-/* 
-    #[task(shared = [unix_time, nvmc])]
-    fn generate_otp(mut cx: generate_otp::Context) {
-        let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
-        let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
-        if len == 0 {
-            rprintln!("Invalied Secret!"); 
-            return;
+    /*
+        #[task(shared = [unix_time, nvmc])]
+        fn generate_otp(mut cx: generate_otp::Context) {
+            let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
+            let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
+            if len == 0 {
+                rprintln!("Invalied Secret!");
+                return;
+            }
+            let secret = &secret_buf[..len];
+            let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
+            let otp_code = totp.generate(unix_time); // unix_time should be in seconds
+            rprintln!("OTP code: {}", otp_code);
+
         }
-        let secret = &secret_buf[..len];
-        let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
-        let otp_code = totp.generate(unix_time); // unix_time should be in seconds
-        rprintln!("OTP code: {}", otp_code); 
-        
-    }
-*/
+    */
     #[task(shared = [unix_time, nvmc])]
     fn generate_otp(mut cx: generate_otp::Context) {
         let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
         // let len = secret_storage::read_secret(&mut cx.shared.nvmc.lock(|n| n), &mut secret_buf);
-        let len = cx.shared.nvmc.lock(|nvmc| {
-            secret_storage::read_secret(nvmc, &mut secret_buf)
-        });
+        let len = cx
+            .shared
+            .nvmc
+            .lock(|nvmc| secret_storage::read_secret(nvmc, &mut secret_buf));
         if len == 0 {
             rprintln!("Invalid secret!");
             return;
-    }
+        }
 
         let secret = &secret_buf[..len];
 
-        let mut decode = [0u8; 32]:
-        let decode_len = Base32::decode(secret, &mut decoded).unwrap_or(0);
-        if decoded_len == 0 {
-            rprintln!("failed to decode via Base32!");
-            return;
-        }
-        let decoded_secret = &decoded[..decoded_len];
-
-        let otp_code = totp::generate_totp(decoded_secret, cx.shared.unix_time.lock(|t| *t), DIGITS, TIME_STEP);
+        let otp_code =
+            totp::generate_totp(secret, cx.shared.unix_time.lock(|t| *t), DIGITS, TIME_STEP);
         rprintln!("OTP code: {}", otp_code);
     }
     // Software PWM using duty from Shared
@@ -448,6 +439,7 @@ mod app {
                                         // If it has enter 13, treat it as a complete commad and parse and excecute it(then reset len = 0)
                                         // if not, store the byte into data_arr at index "len" abd increament "len"
             match c {
+                10 => {} // Ignore LF
                 13 => {
                     // CR
                     let slice = &data_arr[0..*len]; // extract (slice) to get the refernce to the command
@@ -468,19 +460,56 @@ mod app {
                         }
                         // Handles the SetSecret command
                         Ok(Command::SetSecret(secret)) => {
-                            use base32ct::{Base32, Encoding};
+                            use base32ct::{Base32UpperUnpadded, Encoding};
 
-                            let mut decoded = [0u8; secret_storage::SECRET_MAX_LEN];
+                            let mut clean = [0u8; 64];
+                            let mut n = 0usize;
 
-                            match Base32::decode(secret, &mut decoded) {
-                                Ok(decoded_len) => {
-                                    cx.shared.nvmc.lock(|n| secret_storage::write_secret(n, &decoded[..decoded_len]));
-                                    rprintln!("Secret set");
-                                    let _ = write!(serial, "Secret set\r\n").ok();
+                            // Loop to convert the secret to a clean base32 format, removing padding and other unwanted chars
+                            for &b in secret {
+                                let c = match b {
+                                    b'a'..=b'z' => b - 32, // convery lowercase to uppercase
+                                    b'A'..=b'Z' | b'2'..=b'7' => b,
+                                    b'=' | b' ' | b'\t' | b'\r' | b'\n' => continue, // ignore padding/whitespace/newlines etc
+                                    _ => {
+                                        rprintln!("Invalid secret byte: 0x{:02X}", b);
+                                        n = 0;
+                                        break;
+                                    }
+                                };
+
+                                if n >= clean.len() {
+                                    n = 0;
+                                    break;
                                 }
-                                Err(e) => {
-                                    rprintln!("Failed to decode secret via Base32: {:?}", e);
-                                    return;
+                                clean[n] = c;
+                                n += 1;
+                            }
+
+                            // We expect a secret that is longer than 0 chars
+                            if n == 0 {
+                                let _ = write!(serial, "Invalid secret format\r\n").ok();
+                            } else {
+                                let clean_slice = &clean[..n];
+
+                                let mut decoded = [0u8; secret_storage::SECRET_MAX_LEN];
+
+                                match Base32UpperUnpadded::decode(&clean_slice[..n], &mut decoded) {
+                                    Ok(decoded_secret) => {
+                                        cx.shared.nvmc.lock(|n| {
+                                            secret_storage::write_secret(n, &decoded_secret)
+                                        });
+                                        rprintln!("Secret set");
+                                        let _ = write!(serial, "Secret set\r\n").ok();
+                                    }
+                                    Err(e) => {
+                                        rprintln!("Failed to decode secret via Base32: {:?}", e);
+                                        let _ = write!(
+                                            serial,
+                                            "Failed to decode secret via base32\r\n"
+                                        )
+                                        .ok();
+                                    }
                                 }
                             }
                         }
