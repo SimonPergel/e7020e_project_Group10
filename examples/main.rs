@@ -468,11 +468,21 @@ mod app {
                         }
                         // Handles the SetSecret command
                         Ok(Command::SetSecret(secret)) => {
-                            cx.shared
-                                .nvmc
-                                .lock(|n| secret_storage::write_secret(n, secret)); // Writes the secret to flash memory using the NVMC peripheral
-                            rprintln!("Secret set");
-                            let _ = write!(serial, "Secret set\r\n").ok();
+                            use base32ct::{Base32, Encoding};
+
+                            let mut decoded = [0u8; secret_storage::SECRET_MAX_LEN];
+
+                            match Base32::decode(secret, &mut decoded) {
+                                Ok(decoded_len) => {
+                                    cx.shared.nvmc.lock(|n| secret_storage::write_secret(n, &decoded[..decoded_len]));
+                                    rprintln!("Secret set");
+                                    let _ = write!(serial, "Secret set\r\n").ok();
+                                }
+                                Err(e) => {
+                                    rprintln!("Failed to decode secret via Base32: {:?}", e);
+                                    return;
+                                }
+                            }
                         }
                         Ok(Command::PrintSecret) => {
                             cx.shared.nvmc.lock(|n| secret_storage::print_secret(n)); // Reads the secret from flash memory and prints it to the RTT terminal

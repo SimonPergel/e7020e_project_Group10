@@ -18,6 +18,7 @@ dependencies = [
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "base32ct",
  "command-parser",
  "cortex-m",
  "cortex-m-rt",
@@ -76,6 +77,12 @@ name = "bare-metal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fe8f5a8a398345e52358e18ff07cc17a568fbca5c6f73873d3a62056309603"
+
+[[package]]
+name = "base32ct"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e27957ac55e90ce032f6736755cd74cea202e97e19f22e8ba2d0bc0413f99ec9"
 
 [[package]]
 name = "bitfield"
