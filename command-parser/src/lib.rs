@@ -6,7 +6,7 @@
 #![cfg_attr(not(test), no_std)]
 
 #[derive(Debug, PartialEq)]
-pub enum Command {
+pub enum Command<'a> {
     FrequencyHz(u32),
     Duty(u8),
     SetSecret(&'a [u8]),
@@ -34,7 +34,7 @@ pub enum Command {
 ///     Some(Command::FrequencyHz(1000))
 /// );
 /// ```
-pub fn parse(bytes: &[u8]) -> Option<Command> {
+pub fn parse(bytes: &[u8]) -> Option<Command<'_>> {
     let mut split = bytes.splitn(bytes.len(), |c| *c == b' ');
     let next = split.next()?;
     match next {
@@ -60,7 +60,7 @@ pub fn parse(bytes: &[u8]) -> Option<Command> {
         b"time" => {
             let next = split.next()?;
             let str = core::str::from_utf8(next).ok()?;
-            let t: u8 = str.parse().ok()?;
+            let t: u64 = str.parse().ok()?;
             Some(Command::Time(t))
         }
         _ => None,
@@ -141,7 +141,7 @@ pub enum Error {
 ///     Ok(Command::FrequencyHz(1000))
 /// );
 /// ```
-pub fn parse_result(bytes: &[u8]) -> Result<Command, Error> {
+pub fn parse_result(bytes: &[u8]) -> Result<Command<'_>, Error> {
     // let's work on &str instead of raw byte arrays
     let str = core::str::from_utf8(bytes).map_err(|_| Error::NonUtf8)?;
     let mut split = str.split_whitespace();
@@ -167,7 +167,7 @@ pub fn parse_result(bytes: &[u8]) -> Result<Command, Error> {
         "time" => {
             // handle TIME command
             let next = split.next().ok_or(Error::ArgMissing)?;
-            let v: u8 = next.parse().map_err(|_| Error::ArgError)?;
+            let t: u64 = next.parse().map_err(|_| Error::ArgError)?;
             Ok(Command::Time(t))
         }
         _ => Err(Error::CommandNotFound)?,

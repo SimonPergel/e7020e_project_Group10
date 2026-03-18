@@ -53,6 +53,30 @@ mod usb_keyboard {
     // maby convert code to string
     // send digit as HID keybord events
 }
+mod totp {
+    use hmac::{Hmac, Mac};
+    use sha1::Sha1;
+
+    // Type alias for HMAC-SHA1
+    type HmacSha1 = Hmac<Sha1>;
+
+    /// Generate a TOTP code
+    pub fn generate_totp(secret: &[u8], unix_time: u64, digits: u32, step: u64) -> u32 {
+        let counter = unix_time / step;
+        let mut mac = HmacSha1::new_from_slice(secret).unwrap();
+        mac.update(&counter.to_be_bytes());
+        let hash = mac.finalize().into_bytes();
+
+        // dynamic truncation
+        let offset = (hash[19] & 0x0f) as usize;
+        let code = ((u32::from(hash[offset]) & 0x7f) << 24
+            | (u32::from(hash[offset + 1]) & 0xff) << 16
+            | (u32::from(hash[offset + 2]) & 0xff) << 8
+            | (u32::from(hash[offset + 3]) & 0xff)) % 10u32.pow(digits);
+        code
+    }
+    
+}
 
 mod secret_storage {
     // use super::*;
@@ -170,16 +194,17 @@ mod secret_storage {
 mod app {
     use super::*;
 
+    use nrf52840_hal::nvmc;
     use usbd_serial::embedded_io::Write as _;
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = Systick<TIMER_HZ>;
+   
 
     // totp
-    use otp::{Algorithm, Secret, Totp};
+    //use otp::{Algorithm, Secret, Totp};
 
     #[shared]
     struct Shared {
-        totp: Totp,
         unix_time: u64,
         duty: u8, // Basically we want to share state between UART task(data_in) and Blik task(blink)
         period_ms: u32, // derived from frequency
@@ -246,27 +271,19 @@ mod app {
 
         // Allocates a mut fixed size byte array on the stack, every element is initialized to 0u8
         // Rust requires a pre-allocate the space
-        let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
+        //let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
 
         // returns the actual number of bytes written into the buffer, need real length for correct slicing later
         // writes the actual secret key from NVM into beginning of secret_buf
-        let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
+       // let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
 
         // takes the valid portion of the buffer, convert bytes into secret type, Secret is a safe wrapper around the secret key
-        let secret = Secret::from_bytes(&secret_buf[..len]);
+        //let secret = Secret::from_bytes(&secret_buf[..len]).unwrap();       // extract the result, if not ok --> Panic! Must FIX
 
-        // Initialize the totp intstance, source - https://docs.rs/totp-rs/latest/totp_rs/
-        let totp = Totp::new(
-            // creates a totp generator
-            Algorithm::SHA1,
-            "dev".into(),            // Just a label, issuer name (e.g discord)
-            "user".into(),           // Account name
-            super::DIGITS,           // number of digits in the generated code
-            super::TIME_STEP as u32, // time window the code should be valid
-            secret,
-        );
+       // let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
 
-        totp.generate_at(unix_time);
+       // let otp_code = totp.generate(unix_time); // unix_time should be in seconds
+        
 
         let usb_dev = UsbDeviceBuilder::new(
             &cx.local.usb_bus.as_ref().unwrap(),
@@ -289,7 +306,6 @@ mod app {
         #[allow(unreachable_code)]
         (
             Shared {
-                totp,
                 unix_time: 0,
                 duty: 50,
                 period_ms: 1000,
@@ -306,7 +322,38 @@ mod app {
             init::Monotonics(mono),
         )
     }
+/* 
+    #[task(shared = [unix_time, nvmc])]
+    fn generate_otp(mut cx: generate_otp::Context) {
+        let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
+        let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
+        if len == 0 {
+            rprintln!("Invalied Secret!"); 
+            return;
+        }
+        let secret = &secret_buf[..len];
+        let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
+        let otp_code = totp.generate(unix_time); // unix_time should be in seconds
+        rprintln!("OTP code: {}", otp_code); 
+        
+    }
+*/
+    #[task(shared = [unix_time, nvmc])]
+    fn generate_otp(mut cx: generate_otp::Context) {
+        let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
+        // let len = secret_storage::read_secret(&mut cx.shared.nvmc.lock(|n| n), &mut secret_buf);
+        let len = cx.shared.nvmc.lock(|nvmc| {
+            secret_storage::read_secret(nvmc, &mut secret_buf)
+        });
+        if len == 0 {
+            rprintln!("Invalid secret!");
+            return;
+    }
 
+        let secret = &secret_buf[..len];
+        let otp_code = totp::generate_totp(secret, cx.shared.unix_time.lock(|t| *t), DIGITS, TIME_STEP);
+        rprintln!("OTP code: {}", otp_code);
+    }
     // Software PWM using duty from Shared
     #[task(shared = [duty, period_ms, running], local = [cnt: u32 = 0, led1, led_mirror, is_on: bool = false])]
     fn blink(mut cx: blink::Context, instant: Instant) {
@@ -433,11 +480,12 @@ mod app {
                             cx.shared.running.lock(|r| *r = false); // Sets the shared running boolen to false
                             let now = monotonics::now();
                             let _ = write!(serial, "Stopped\r\n").ok();
+                            generate_otp::spawn().ok();
                         }
                         // Handles the stop command
                         Ok(Command::Time(t)) => {
                             cx.shared.unix_time.lock(|time| *time = t);
-                            let _ = write!(serial, "Unix time set to\r\n", t).ok();
+                            let _ = write!(serial, "Unix time set to {}\r\n", t).ok();
                         }
                         Err(e) => {
                             rprintln!("Parse error {:?}", e);
