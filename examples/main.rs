@@ -76,6 +76,25 @@ mod totp {
             % 10u32.pow(digits);
         code
     }
+
+    impl Keyboard {
+        fn from_digit(d:u8) -> Self {
+            match d {
+                0 => Keyboard::Num0,
+                1 => Keyboard::Num1,
+                2 => Keyboard::Num2,
+                3 => Keyboard::Num3,
+                4 => Keyboard::Num4,
+                5 => Keyboard::Num5,
+                6 => Keyboard::Num6,
+                7 => Keyboard::Num7,
+                8 => Keyboard::Num8,
+                9 => Keyboard::Num9,
+                _ => Keyboard::NoEventIndicated,
+
+            }
+        }
+    }
 }
 
 mod secret_storage {
@@ -209,6 +228,7 @@ mod app {
         period_ms: u32, // derived from frequency
         running: bool, // start and stoprunning: bool,  // start and stop
         nvmc: FlashNvmc, // keep NVMC as a shared resource
+        code: [Keyboard; 7],
     }
 
     #[local]
@@ -354,6 +374,22 @@ mod app {
         let otp_code =
             totp::generate_totp(secret, cx.shared.unix_time.lock(|t| *t), DIGITS, TIME_STEP);
         rprintln!("OTP code: {}", otp_code);
+
+        // extract one digit at the time and ad it to a temp array
+        let mut digits = [0u8; 6]
+        let mut temp = otp_code;   
+
+        for i in (0..6).rev() {
+            digits[i] = (temp % 10) as u8;  // extract the last element 
+            temp/= 10;                      // remove it from the tempural array
+        }
+        // Store the code in the shared varible
+        let len = cx.shared.code.lock(|code| {                      // lock and access the shared varible
+            for (i, d) in digits.iter().enumerate() {               // iterates over the  extracted digits from previous step
+                code[i] = Keyboard::from_digit(*d);                 // This will convert the numerical digits into keyboard rep.
+            }                                                       // neumerate: build on iterator to provide a sequence pairs (consists of index and a refernce to where its located)
+        });
+
     }
     // Software PWM using duty from Shared
     #[task(shared = [duty, period_ms, running], local = [cnt: u32 = 0, led1, led_mirror, is_on: bool = false])]
