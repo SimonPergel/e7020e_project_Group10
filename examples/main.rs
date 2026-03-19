@@ -228,7 +228,7 @@ mod app {
         period_ms: u32, // derived from frequency
         running: bool, // start and stoprunning: bool,  // start and stop
         nvmc: FlashNvmc, // keep NVMC as a shared resource
-        code: [Keyboard; 7],
+        code: [Keyboard; 6],
     }
 
     #[local]
@@ -389,6 +389,7 @@ mod app {
                 code[i] = Keyboard::from_digit(*d);                 // This will convert the numerical digits into keyboard rep.
             }                                                       // neumerate: build on iterator to provide a sequence pairs (consists of index and a refernce to where its located)
         });
+
 
     }
     // Software PWM using duty from Shared
