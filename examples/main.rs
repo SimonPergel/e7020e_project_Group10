@@ -41,7 +41,7 @@ mod raw_access {
 }
 
 // C like API...
-mod nrf52840 {
+mod nrf52833 {
     use super::raw_access::*;
 
     #[repr(C)]
@@ -71,7 +71,7 @@ mod nrf52840 {
     }
 }
 
-use nrf52840::*;
+use nrf52833::*;
 
 use {
     command_parser::{parse_result, Command},
@@ -80,7 +80,7 @@ use {
         // For GPIO and serial peripherals
         usbd::{UsbPeripheral, Usbd},
     },
-    nrf52840_hal::{self as hal},
+    nrf52833_hal::{self as hal},
     rtt_target::{rprintln, rtt_init_print}, // For RTT logging (terminal output)
     systick_monotonic::fugit::ExtU64, // For time handling with the monotonic timer
     // nb::block,                                      // For blocking on serial reads/writes
@@ -247,7 +247,7 @@ mod secret_storage {
     }
 }
 
-#[rtic::app(device = nrf52840_hal::pac, dispatchers = [TIMER0])]
+#[rtic::app(device = nrf52833_hal::pac, dispatchers = [TIMER0])]
 mod app {
     use super::*;
 
@@ -335,7 +335,7 @@ mod app {
         // let otp_code = totp.generate(unix_time); // unix_time should be in seconds
         
         // Had to change device class in order for windows to recognize it as a keyboard + serial connection.
-        let mut usb_dev = UsbDeviceBuilder::new(cx.local.usb_bus.as_ref().unwrap(), UsbVidPid(0x16c0, 0x27dd))
+        let mut usb_dev = UsbDeviceBuilder::new(cx.local.usb_bus.as_ref().unwrap(), UsbVidPid(0x16c0, 0x27DE))
             .strings(&[StringDescriptors::default()
                 .manufacturer("Fake company")
                 .product("Serial port + Keyboard")
@@ -448,6 +448,7 @@ mod app {
                 code[i] = digit_to_key(*d);                           // This will convert the numerical digits into keyboard rep.
             }                                                       // neumerate: build on iterator to provide a sequence pairs (consists of index and a refernce to where its located)
         });
+        send_data::spawn().ok();
     }
 
     // When the button is pressed and generate the OPT code and display it
@@ -462,7 +463,7 @@ mod app {
     // display::show(opt)
     //  }
     // When USB is connected -> send OPT
-    #[task(binds = USBD, priority = 1, shared = [unix_time, nvmc], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]])]
+    #[task(binds = USBD, priority = 1, shared = [unix_time, nvmc, vir_keyboard], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]])]
     fn usb_interrupt(mut cx: usb_interrupt::Context) {
         // Calculate the current time
         // let time = cx.shared.unix_time.lock(|t| *t);
@@ -479,7 +480,11 @@ mod app {
         // IMPORTANTE: Each time a command is sent from cutecom, the characters dont come all att ones, just one byte at the time?
 
         // checks whether new data has arrived, and if this is true call serial.read() or serial.write(). There is work to do
-        if !usb_dev.poll(&mut [serial]) {
+        let poll = cx.shared.vir_keyboard.lock(|vk| {
+            usb_dev.poll(&mut [serial, vk])
+        });
+
+        if !poll {
             return;
         }
         //rprintln!("usb interrupt!");
@@ -586,7 +591,7 @@ mod app {
         let now = monotonics::now().ticks();
         if now - *cx.local.last_press > 200 {
             *cx.local.last_press = now;
-            send_data::spawn().ok();
+            generate_otp::spawn().ok();
         }
     }
 
