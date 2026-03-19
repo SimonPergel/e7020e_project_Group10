@@ -82,7 +82,7 @@ use {
     },
     nrf52840_hal::{self as hal},
     rtt_target::{rprintln, rtt_init_print}, // For RTT logging (terminal output)
-    systick_monotonic::fugit::{ExtU64, TimerInstantU64}, // For time handling with the monotonic timer
+    systick_monotonic::fugit::ExtU64, // For time handling with the monotonic timer
     // nb::block,                                      // For blocking on serial reads/writes
     systick_monotonic::Systick, // For the monotonic timer based on SysTick
     usb_device::{
@@ -98,9 +98,6 @@ use {
 const TIME_STEP: u64 = 30;
 const DIGITS: u32 = 6;
 const TIMER_HZ: u32 = 1000;
-
-type Led = hal::gpio::Pin<hal::gpio::Output<hal::gpio::PushPull>>;
-type Instant = TimerInstantU64<TIMER_HZ>;
 
 // Types for flash storage and NVMC peripheral, used in the secret_storage module to read/write secrets to flash memory
 type FlashNvmc = hal::nvmc::Nvmc<hal::pac::NVMC>;
@@ -250,7 +247,7 @@ mod secret_storage {
     }
 }
 
-#[rtic::app(device = nrf52840_hal::pac, dispatchers = [SWI0_EGU0])]
+#[rtic::app(device = nrf52840_hal::pac, dispatchers = [TIMER0])]
 mod app {
     use super::*;
 
