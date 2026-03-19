@@ -30,7 +30,7 @@ mod raw_access {
 }
 
 // C like API...
-mod nrf52833 {
+mod nrf52840 {
     use super::raw_access::*;
 
     #[repr(C)]
@@ -60,9 +60,9 @@ mod nrf52833 {
     }
 }
 
-use nrf52833::*;
+use nrf52840::*;
 
-#[rtic::app(device = nrf52833_hal::pac, dispatchers = [TIMER0])]
+#[rtic::app(device = nrf52840_hal::pac, dispatchers = [TIMER0])]
 mod app {
     use super::*;
     use {
@@ -84,7 +84,7 @@ mod app {
     struct Shared {
         serial: SerialPort<'static, Usbd<UsbPeripheral<'static>>>,
         vir_keyboard: UsbHidClass<'static, Usbd<UsbPeripheral<'static>>, HCons<NKROBootKeyboard<'static, Usbd<UsbPeripheral<'static>>>, HNil>>,
-        code: [Keyboard; 7],
+        code: [Keyboard; 6],
         gpio_p0: &'static mut GPIO,
     }
 
@@ -112,10 +112,12 @@ mod app {
         cx.local.usb_bus.replace(usb_bus);
         let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
 
+        // Create a 'virtual keyboard', i.e. a type which acts as a keyboard when connecting the nRF to a computer.
         let mut vir_keyboard = UsbHidClassBuilder::new()
             .add_device(NKROBootKeyboardConfig::default())
             .build(cx.local.usb_bus.as_ref().unwrap());
 
+        // Had to change device class in order for windows to recognize it as a keyboard + serial connection.
         let mut usb_dev = UsbDeviceBuilder::new(cx.local.usb_bus.as_ref().unwrap(), UsbVidPid(0x16c0, 0x27dd))
             .strings(&[StringDescriptors::default()
                 .manufacturer("Fake company")
@@ -130,12 +132,14 @@ mod app {
             .build();
 
         let mono = Systick::new(cx.core.SYST, 64_000_000);
-        let code: [Keyboard; 7] = [Keyboard::A, Keyboard::A, Keyboard::C, 
-            Keyboard::D, Keyboard::F, Keyboard::F, Keyboard::ReturnEnter];
+        // Keyboard is the type that a KeyboardReport is written as, here I assign 6 character code + Enter.
+        let code: [Keyboard; 6] = [Keyboard::A, Keyboard::A, Keyboard::C, 
+            Keyboard::D, Keyboard::F, Keyboard::F];
 
         let gpio_p0 = unsafe { &mut *GPIO_P0::get() }; // get the reference to GPIOA in memory
         gpio_p0.PIN_CNF[29].write(0b1100); // Enable button 1
 
+        // Unlocks the button etc.
         unsafe {
             core::ptr::write_volatile(0x4000_6510 as *mut u32, 1 | (29 << 8) | (2 << 16));
             core::ptr::write_volatile(0x4000_6304 as *mut u32, 1);
@@ -151,6 +155,7 @@ mod app {
     fn usbd(cx: usbd::Context) {
         let usb_dev = cx.local.usb_dev;
 
+        // Checks if something happens on the usb connection.
         (cx.shared.serial, cx.shared.vir_keyboard).lock(|serial, vir_keyboard| {
             if usb_dev.poll(&mut [serial, vir_keyboard]) {
 
@@ -158,6 +163,7 @@ mod app {
         });
     }
 
+    // Checks if a button press happens, if it happens, spawn the send_data function.
     #[task(binds = GPIOTE, local = [last_press: u64 = 0])]
     fn button_interrupt(cx: button_interrupt::Context) {
         unsafe { core::ptr::write_volatile(0x4000_6100 as *mut u32, 0); }
@@ -168,6 +174,7 @@ mod app {
         }
     }
 
+    // Keeps the usb connection fresh so windows doesn't drop the connection.
     #[task(shared = [vir_keyboard, gpio_p0])]
     fn hid_tick(mut cx: hid_tick::Context) {
         cx.shared.vir_keyboard.lock(|vir_keyboard| {
@@ -180,11 +187,14 @@ mod app {
         hid_tick::spawn_after(1u64.millis()).ok();
     }
 
+    // Function to send data over to the computer.
     #[task(shared = [vir_keyboard, code], local = [index: usize = 0])]
     fn send_data(mut cx: send_data::Context) {
         rprintln!("\n--- send_data ---");
         let i = *cx.local.index;
-        if i < 7 {
+        // Code variable is always 6 index long, loops through each digit, this is done so the same character
+        // after each other can be sent.
+        if i < 6 {
             let key = cx.shared.code.lock(|code| code[i]);
 
             cx.shared.vir_keyboard.lock(|vir_keyboard| {
@@ -195,11 +205,18 @@ mod app {
             release_keys::spawn_after(20u64.millis()).ok();
             send_data::spawn_after(40u64.millis()).ok();
         }
+        // When all digits are sent, reset index to 0 and send a Enter Keyboard command.
         else {
             *cx.local.index = 0;
+
+            cx.shared.vir_keyboard.lock(|vir_keyboard| {
+                vir_keyboard.device().write_report([Keyboard::ReturnEnter]).ok();
+            });
+            release_keys::spawn_after(20u64.millis()).ok();
         }
     }
 
+    // Function to release the key, has to be done as otherwise windows will not regard it as a received character.
     #[task(shared = [vir_keyboard])]
     fn release_keys(mut cx: release_keys::Context) {
         let no_keys: [Keyboard; 0] = [];
