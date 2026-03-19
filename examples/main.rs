@@ -90,7 +90,7 @@ use {
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
     },
     usbd_serial::{SerialPort},
-    usbd_human_interface_device::{device::keyboard::{NKROBootKeyboard, NKROBootKeyboardConfig}, page::Keyboard, prelude::{UsbHidClass, *}},
+    usbd_human_interface_device::{device::keyboard::{BootKeyboard, BootKeyboardConfig}, page::Keyboard, prelude::{UsbHidClass, *}},
     frunk::{HCons, HNil},
 };
 
@@ -263,15 +263,15 @@ mod app {
         unix_time: u64,
         nvmc: FlashNvmc, // keep NVMC as a shared resource
         code: [Keyboard; 6],
-        vir_keyboard: UsbHidClass<'static, Usbd<UsbPeripheral<'static>>, HCons<NKROBootKeyboard<'static, Usbd<UsbPeripheral<'static>>>, HNil>>,
+        vir_keyboard: UsbHidClass<'static, Usbd<UsbPeripheral<'static>>, HCons<BootKeyboard<'static, Usbd<UsbPeripheral<'static>>>, HNil>>,
         gpio_p0: &'static mut GPIO,
+        serial: SerialPort<'static, Usbd<UsbPeripheral<'static>>>,
     }
 
     #[local]
     struct Local {
         //button: hal::gpio::Pin<hal::gpio::Input<hal::gpio::PullUp>>,
         usb_dev: usb_device::device::UsbDevice<'static, Usbd<UsbPeripheral<'static>>>, // This controlls transfers and all USB protocol handling
-        serial: SerialPort<'static, Usbd<UsbPeripheral<'static>>>, // The CDC-ACM serial interface ( the virtual COM port), read from and write to
         buf: [u8; 64], // 64  byte buffer used for reading and incoming USB data
     }
     #[init(local = [
@@ -299,9 +299,10 @@ mod app {
         )));
         cx.local.usb_bus.replace(usb_bus);
 
+        let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
 
         let mut vir_keyboard = UsbHidClassBuilder::new()
-            .add_device(NKROBootKeyboardConfig::default())
+            .add_device(BootKeyboardConfig::default())
             .build(cx.local.usb_bus.as_ref().unwrap());
 
         // Map only the last flash page to a mutable slice, we'll store the secret there.
@@ -317,7 +318,6 @@ mod app {
         // let button = port0.p0_11.into_pullup_input().degrade();
 
         //let usb_bus = cx.local.usb_bus.as_ref().unwrap();
-        let serial = SerialPort::new(&cx.local.usb_bus.as_ref().unwrap());
 
         // Allocates a mut fixed size byte array on the stack, every element is initialized to 0u8
         // Rust requires a pre-allocate the space
@@ -335,15 +335,13 @@ mod app {
         // let otp_code = totp.generate(unix_time); // unix_time should be in seconds
         
         // Had to change device class in order for windows to recognize it as a keyboard + serial connection.
-        let mut usb_dev = UsbDeviceBuilder::new(cx.local.usb_bus.as_ref().unwrap(), UsbVidPid(0x16c0, 0x27DE))
+        let mut usb_dev = UsbDeviceBuilder::new(cx.local.usb_bus.as_ref().unwrap(), UsbVidPid(0x1209, 0x0001))
             .strings(&[StringDescriptors::default()
                 .manufacturer("Fake company")
                 .product("Serial port + Keyboard")
                 .serial_number("TEST")])
             .unwrap()
-            .device_class(0xEF)
-            .device_sub_class(0x02)
-            .device_protocol(0x01)
+            .composite_with_iads()
             .max_packet_size_0(64) // (makes control transfers 8x faster)
             .unwrap()
             .build();
@@ -370,35 +368,15 @@ mod app {
                 nvmc: nvmc, // Initialize the NVMC peripheral and store it in the shared resources
                 vir_keyboard,
                 gpio_p0,
+                serial,
             },
             Local {
                 usb_dev,
-                serial,
                 buf: [0u8; 64],
             },
             init::Monotonics(mono),
         )
     }
-    /*
-        #[task(shared = [unix_time, nvmc])]
-        fn generate_otp(mut cx: generate_otp::Context) {
-            let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
-            let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
-            if len == 0 {
-                rprintln!("Invalied Secret!");
-                return;
-            }
-            let secret = &secret_buf[..len];
-            let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
-            let otp_code = totp.generate(unix_time); // unix_time should be in seconds
-            rprintln!("OTP code: {}", otp_code);
-
-        }
-    */
-
-        
-
-        
 
     #[task(shared = [code, unix_time, nvmc])]
     fn generate_otp(mut cx: generate_otp::Context) {
@@ -463,125 +441,117 @@ mod app {
     // display::show(opt)
     //  }
     // When USB is connected -> send OPT
-    #[task(binds = USBD, priority = 1, shared = [unix_time, nvmc, vir_keyboard], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]])]
-    fn usb_interrupt(mut cx: usb_interrupt::Context) {
-        // Calculate the current time
-        // let time = cx.shared.unix_time.lock(|t| *t);
-        // caculate the right OPT code based on the time
-        //let opt = totp::generate(SECRET, time);
-
-        //  usb_keyboard::send::code(opt);
+    #[task(binds = USBD, priority = 3, local = [usb_dev, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]], shared = [serial, vir_keyboard, unix_time, nvmc])]
+    fn usbd(mut cx: usbd::Context) {
         let usb_dev = cx.local.usb_dev;
-        let serial = cx.local.serial;
         let buf = cx.local.buf; // Initial buffer that hold the incomming bytes from serial port
         let len = cx.local.len; // this is the counter that tracks how many characters has been stores in data_arr
         let data_arr = cx.local.data_arr; // this is like a small buffer to store incomming characters extracted from the buf-buffer
 
-        // IMPORTANTE: Each time a command is sent from cutecom, the characters dont come all att ones, just one byte at the time?
+        (cx.shared.serial, cx.shared.vir_keyboard).lock(|serial, vir_keyboard| {
+            let mut classes: [&mut dyn usb_device::class::UsbClass<_>; 2] = [
+                &mut *serial, 
+                &mut *vir_keyboard
+            ];
 
-        // checks whether new data has arrived, and if this is true call serial.read() or serial.write(). There is work to do
-        let poll = cx.shared.vir_keyboard.lock(|vk| {
-            usb_dev.poll(&mut [serial, vk])
-        });
+            if !usb_dev.poll(&mut classes) {
+                return;
+            }
 
-        if !poll {
-            return;
-        }
-        //rprintln!("usb interrupt!");
-        // Read data
-        let Ok(count) = serial.read(buf) else { return }; // if somthing has been recived, store it temporary in buf
-        if count == 0 {
-            return;
-        }
+            let Ok(count) = serial.read(buf) else { return }; // if somthing has been recived, store it temporary in buf
+            if count == 0 {
+                return;
+            }
 
-        // loop through each byte indi.
-        for &c in &buf[..count] {
-            let _ = serial.write(&[c]); // Echo
-                                        // If it has enter 13, treat it as a complete commad and parse and excecute it(then reset len = 0)
-                                        // if not, store the byte into data_arr at index "len" abd increament "len"
-            match c {
-                10 => {} // Ignore LF
-                13 => {
-                    // CR
-                    let slice = &data_arr[0..*len]; // extract (slice) to get the refernce to the command
-                                                    // Takes the slice and tries to match it with the right handler
-                    match parse_result(slice) {
-                        // Handles the SetSecret command
-                        Ok(Command::SetSecret(secret)) => {
-                            use base32ct::{Base32UpperUnpadded, Encoding};
+            // loop through each byte indi.
+            for &c in &buf[..count] {
+                let _ = serial.write(&[c]); // Echo
+                                            // If it has enter 13, treat it as a complete commad and parse and excecute it(then reset len = 0)
+                                            // if not, store the byte into data_arr at index "len" abd increament "len"
+                match c {
+                    10 => {} // Ignore LF
+                    13 => {
+                        // CR
+                        let slice = &data_arr[0..*len]; // extract (slice) to get the refernce to the command
+                                                        // Takes the slice and tries to match it with the right handler
+                        match parse_result(slice) {
+                            // Handles the SetSecret command
+                            Ok(Command::SetSecret(secret)) => {
+                                use base32ct::{Base32UpperUnpadded, Encoding};
 
-                            let mut clean = [0u8; 64];
-                            let mut n = 0usize;
+                                let mut clean = [0u8; 64];
+                                let mut n = 0usize;
 
-                            // Loop to convert the secret to a clean base32 format, removing padding and other unwanted chars
-                            for &b in secret {
-                                let c = match b {
-                                    b'a'..=b'z' => b - 32, // convery lowercase to uppercase
-                                    b'A'..=b'Z' | b'2'..=b'7' => b,
-                                    b'=' | b' ' | b'\t' | b'\r' | b'\n' => continue, // ignore padding/whitespace/newlines etc
-                                    _ => {
-                                        rprintln!("Invalid secret byte: 0x{:02X}", b);
+                                // Loop to convert the secret to a clean base32 format, removing padding and other unwanted chars
+                                for &b in secret {
+                                    let c = match b {
+                                        b'a'..=b'z' => b - 32, // convery lowercase to uppercase
+                                        b'A'..=b'Z' | b'2'..=b'7' => b,
+                                        b'=' | b' ' | b'\t' | b'\r' | b'\n' => continue, // ignore padding/whitespace/newlines etc
+                                        _ => {
+                                            rprintln!("Invalid secret byte: 0x{:02X}", b);
+                                            n = 0;
+                                            break;
+                                        }
+                                    };
+
+                                    if n >= clean.len() {
                                         n = 0;
                                         break;
                                     }
-                                };
-
-                                if n >= clean.len() {
-                                    n = 0;
-                                    break;
+                                    clean[n] = c;
+                                    n += 1;
                                 }
-                                clean[n] = c;
-                                n += 1;
-                            }
 
-                            // We expect a secret that is longer than 0 chars
-                            if n == 0 {
-                                let _ = write!(serial, "Invalid secret format\r\n").ok();
-                            } else {
-                                let clean_slice = &clean[..n];
+                                // We expect a secret that is longer than 0 chars
+                                if n == 0 {
+                                    let _ = write!(serial, "Invalid secret format\r\n").ok();
+                                } else {
+                                    let clean_slice = &clean[..n];
 
-                                let mut decoded = [0u8; secret_storage::SECRET_MAX_LEN];
+                                    let mut decoded = [0u8; secret_storage::SECRET_MAX_LEN];
 
-                                match Base32UpperUnpadded::decode(&clean_slice[..n], &mut decoded) {
-                                    Ok(decoded_secret) => {
-                                        cx.shared.nvmc.lock(|n| {
-                                            secret_storage::write_secret(n, &decoded_secret)
-                                        });
-                                        rprintln!("Secret set");
-                                        let _ = write!(serial, "Secret set\r\n").ok();
-                                    }
-                                    Err(e) => {
-                                        rprintln!("Failed to decode secret via Base32: {:?}", e);
-                                        let _ = write!(
-                                            serial,
-                                            "Failed to decode secret via base32\r\n"
-                                        )
-                                        .ok();
+                                    match Base32UpperUnpadded::decode(&clean_slice[..n], &mut decoded) {
+                                        Ok(decoded_secret) => {
+                                            cx.shared.nvmc.lock(|n| {
+                                                secret_storage::write_secret(n, &decoded_secret)
+                                            });
+                                            rprintln!("Secret set");
+                                            let _ = write!(serial, "Secret set\r\n").ok();
+                                        }
+                                        Err(e) => {
+                                            rprintln!("Failed to decode secret via Base32: {:?}", e);
+                                            let _ = write!(
+                                                serial,
+                                                "Failed to decode secret via base32\r\n"
+                                            )
+                                            .ok();
+                                        }
                                     }
                                 }
                             }
+                            Ok(Command::PrintSecret) => {
+                                cx.shared.nvmc.lock(|n| secret_storage::print_secret(n)); // Reads the secret from flash memory and prints it to the RTT terminal
+                                let _ = write!(serial, "Secret printed to RTT terminal\r\n").ok();
+                            }
+                            // Handles the stop command
+                            Ok(Command::Time(t)) => {
+                                cx.shared.unix_time.lock(|time| *time = t);
+                                let _ = write!(serial, "Unix time set to {}\r\n", t).ok();
+                            }
+                            Err(e) => {
+                                rprintln!("Parse error {:?}", e);
+                            }
                         }
-                        Ok(Command::PrintSecret) => {
-                            cx.shared.nvmc.lock(|n| secret_storage::print_secret(n)); // Reads the secret from flash memory and prints it to the RTT terminal
-                            let _ = write!(serial, "Secret printed to RTT terminal\r\n").ok();
-                        }
-                        // Handles the stop command
-                        Ok(Command::Time(t)) => {
-                            cx.shared.unix_time.lock(|time| *time = t);
-                            let _ = write!(serial, "Unix time set to {}\r\n", t).ok();
-                        }
-                        Err(e) => {
-                            rprintln!("Parse error {:?}", e);
-                        }
+                        *len = 0;
                     }
-                    *len = 0;
-                }
-                _ => {
-                    data_arr[*len] = c;
-                    *len = usize::min(*len + 1, data_arr.len() - 1); // len always point to the next free position
+                    _ => {
+                        data_arr[*len] = c;
+                        *len = usize::min(*len + 1, data_arr.len() - 1); // len always point to the next free position
+                    }
                 }
             }
-        }
+        });
     }
 
     // Checks if a button press happens, if it happens, spawn the send_data function.
