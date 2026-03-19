@@ -78,19 +78,18 @@ use {
     hal::{
         clocks::Clocks,
         // For GPIO and serial peripherals
-        gpio::{p0::Parts as P0Parts, p1::Parts as P1Parts, Level}, //Output, Pin, PushPull}
         usbd::{UsbPeripheral, Usbd},
     },
     nrf52840_hal::{self as hal},
     rtt_target::{rprintln, rtt_init_print}, // For RTT logging (terminal output)
-    systick_monotonic::fugit::{ExtU32, TimerInstantU64}, // For time handling with the monotonic timer
+    systick_monotonic::fugit::{ExtU64, TimerInstantU64}, // For time handling with the monotonic timer
     // nb::block,                                      // For blocking on serial reads/writes
     systick_monotonic::Systick, // For the monotonic timer based on SysTick
     usb_device::{
         class_prelude::UsbBusAllocator,
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
     },
-    usbd_serial::{SerialPort, USB_CLASS_CDC},
+    usbd_serial::{SerialPort},
     usbd_human_interface_device::{device::keyboard::{NKROBootKeyboard, NKROBootKeyboardConfig}, page::Keyboard, prelude::{UsbHidClass, *}},
     frunk::{HCons, HNil},
 };
@@ -265,18 +264,14 @@ mod app {
     #[shared]
     struct Shared {
         unix_time: u64,
-        duty: u8, // Basically we want to share state between UART task(data_in) and Blik task(blink)
-        period_ms: u32, // derived from frequency
-        running: bool, // start and stoprunning: bool,  // start and stop
         nvmc: FlashNvmc, // keep NVMC as a shared resource
         code: [Keyboard; 6],
         vir_keyboard: UsbHidClass<'static, Usbd<UsbPeripheral<'static>>, HCons<NKROBootKeyboard<'static, Usbd<UsbPeripheral<'static>>>, HNil>>,
+        gpio_p0: &'static mut GPIO,
     }
 
     #[local]
     struct Local {
-        led1: Led,       // P0.13
-        led_mirror: Led, // P1.3
         //button: hal::gpio::Pin<hal::gpio::Input<hal::gpio::PullUp>>,
         usb_dev: usb_device::device::UsbDevice<'static, Usbd<UsbPeripheral<'static>>>, // This controlls transfers and all USB protocol handling
         serial: SerialPort<'static, Usbd<UsbPeripheral<'static>>>, // The CDC-ACM serial interface ( the virtual COM port), read from and write to
@@ -295,14 +290,6 @@ mod app {
         let device = cx.device; // Gives access  to all the harware periphials on the nRF52840( like USB, CLOCK, GPIO and more)
                                 //Enable USBD interrupt
         device.USBD.intenset.write(|w| w.sof().set());
-
-        let port0 = P0Parts::new(device.P0);
-        let port1 = P1Parts::new(device.P1);
-
-        // LED
-        // P0.13, connected to LED1 on nRF52840 DK
-        let led1 = port0.p0_13.into_push_pull_output(Level::Low).degrade();
-        let led_mirror = port1.p1_13.into_push_pull_output(Level::Low).degrade();
 
         // This sets up the clock to work with precise timing required by the USB
         let clocks = Clocks::new(device.CLOCK).enable_ext_hfosc();
@@ -350,41 +337,44 @@ mod app {
 
         // let otp_code = totp.generate(unix_time); // unix_time should be in seconds
         
-
-        let usb_dev = UsbDeviceBuilder::new(
-            &cx.local.usb_bus.as_ref().unwrap(),
-            UsbVidPid(0x16c0, 0x27dd),
-        )
-        .strings(&[StringDescriptors::default()
-            .manufacturer("Fake company")
-            .product("Serial port")
-            .serial_number("TEST")])
-        .unwrap()
-        .device_class(USB_CLASS_CDC)
-        .max_packet_size_0(64) // (makes control transfers 8x faster)
-        .unwrap()
-        .build();
+        // Had to change device class in order for windows to recognize it as a keyboard + serial connection.
+        let mut usb_dev = UsbDeviceBuilder::new(cx.local.usb_bus.as_ref().unwrap(), UsbVidPid(0x16c0, 0x27dd))
+            .strings(&[StringDescriptors::default()
+                .manufacturer("Fake company")
+                .product("Serial port + Keyboard")
+                .serial_number("TEST")])
+            .unwrap()
+            .device_class(0xEF)
+            .device_sub_class(0x02)
+            .device_protocol(0x01)
+            .max_packet_size_0(64) // (makes control transfers 8x faster)
+            .unwrap()
+            .build();
 
         let code: [Keyboard; 6] = [Keyboard::A, Keyboard::A, Keyboard::C, 
             Keyboard::D, Keyboard::F, Keyboard::F];
-        // start blinking
-        let start_blink = mono.now() + 10.millis();
-        blink::spawn_at(start_blink, start_blink).unwrap();
+
+        let gpio_p0 = unsafe { &mut *GPIO_P0::get() }; // get the reference to GPIOA in memory
+        gpio_p0.PIN_CNF[29].write(0b1100); // Enable button 1
+
+        // Unlocks the button etc.
+        unsafe {
+            core::ptr::write_volatile(0x4000_6510 as *mut u32, 1 | (29 << 8) | (2 << 16));
+            core::ptr::write_volatile(0x4000_6304 as *mut u32, 1);
+        }
+
+        hid_tick::spawn().ok();
 
         #[allow(unreachable_code)]
         (
             Shared {
                 code: code,
                 unix_time: 0,
-                duty: 50,
-                period_ms: 1000,
-                running: true,
                 nvmc: nvmc, // Initialize the NVMC peripheral and store it in the shared resources
                 vir_keyboard,
+                gpio_p0,
             },
             Local {
-                led1,
-                led_mirror,
                 usb_dev,
                 serial,
                 buf: [0u8; 64],
@@ -462,44 +452,6 @@ mod app {
             }                                                       // neumerate: build on iterator to provide a sequence pairs (consists of index and a refernce to where its located)
         });
     }
-    // Software PWM using duty from Shared
-    #[task(shared = [duty, period_ms, running], local = [cnt: u32 = 0, led1, led_mirror, is_on: bool = false])]
-    fn blink(mut cx: blink::Context, instant: Instant) {
-        let duty = cx.shared.duty.lock(|d| *d); // This ensures safe access to the shared data
-        let period_ms = cx.shared.period_ms.lock(|d| *d);
-        let running = cx.shared.running.lock(|d| *d);
-
-        // STOP command -> led should be forced OFF and no recheduling
-        if !running {
-            led::led_off(cx.local.led1); // P0.13 -> off
-            led::led_off(cx.local.led_mirror); // P1.13 -> off
-            *cx.local.is_on = false;
-            return;
-        }
-
-        //let period_ms = 1000;
-        let on_time = period_ms * duty as u32 / 100;
-        let off_time = period_ms - on_time;
-
-        // If LED is currently ON -> turn OFF
-        if *cx.local.is_on {
-            led::led_off(cx.local.led1); // P0.13 -> off
-            led::led_off(cx.local.led_mirror); // P1.13 -> off
-            *cx.local.is_on = false;
-            if running {
-                blink::spawn_at(instant + off_time.millis(), instant + off_time.millis()).unwrap();
-            }
-
-        // IF its OFF -> turn ON
-        } else {
-            led::led_on(cx.local.led1); // P0.13 -> on
-            led::led_on(cx.local.led_mirror); // P1.13 -> on
-            *cx.local.is_on = true;
-            if running {
-                blink::spawn_at(instant + on_time.millis(), instant + on_time.millis()).unwrap();
-            }
-        }
-    }
 
     // When the button is pressed and generate the OPT code and display it
     // #[task(binds = GPIOTE, shared = [unix_time])]
@@ -513,7 +465,7 @@ mod app {
     // display::show(opt)
     //  }
     // When USB is connected -> send OPT
-    #[task(binds = USBD, priority = 1, shared = [unix_time, duty, period_ms, running, nvmc], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]])]
+    #[task(binds = USBD, priority = 1, shared = [unix_time, nvmc], local = [ usb_dev, serial, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]])]
     fn usb_interrupt(mut cx: usb_interrupt::Context) {
         // Calculate the current time
         // let time = cx.shared.unix_time.lock(|t| *t);
@@ -552,19 +504,6 @@ mod app {
                     let slice = &data_arr[0..*len]; // extract (slice) to get the refernce to the command
                                                     // Takes the slice and tries to match it with the right handler
                     match parse_result(slice) {
-                        Ok(Command::Duty(val)) => {
-                            cx.shared.duty.lock(|d| *d = val);
-                            rprintln!("Duty set to {}", val);
-                            let _ = write!(serial, "Duty set to {}\r\n", val).ok();
-                        }
-                        // Handles Frequency command
-                        Ok(Command::FrequencyHz(freq)) => {
-                            let period_ms = 1000 / freq; // Converts the desired frequency to the time period in miliseconds
-                            cx.shared.period_ms.lock(|p| *p = period_ms); // updated the shared varible that hold the current value of the period_ms
-                            rprintln!("Frequency set to {}", freq);
-                            let _ = write!(serial, "Duty set to {} Hz\r\n", freq).ok();
-                            // Sends back confirmation to the serial terminal in CuteCom
-                        }
                         // Handles the SetSecret command
                         Ok(Command::SetSecret(secret)) => {
                             use base32ct::{Base32UpperUnpadded, Encoding};
@@ -624,20 +563,6 @@ mod app {
                             cx.shared.nvmc.lock(|n| secret_storage::print_secret(n)); // Reads the secret from flash memory and prints it to the RTT terminal
                             let _ = write!(serial, "Secret printed to RTT terminal\r\n").ok();
                         }
-                        // Handles the Start command
-                        Ok(Command::Start) => {
-                            cx.shared.running.lock(|r| *r = true); // setting the running boolen to true, signaling the blink function to start
-                            let now = monotonics::now(); // Gets the current mono timer timestamp, needed because blink::spawn_at requires a timestamp
-                            blink::spawn_at(now, now).ok(); // Immediate scheduling the blink function to runn now( current time extracted from the line above)
-                            let _ = write!(serial, "Started\r\n").ok();
-                        }
-                        // Handles the stop command
-                        Ok(Command::Stop) => {
-                            cx.shared.running.lock(|r| *r = false); // Sets the shared running boolen to false
-                            let now = monotonics::now();
-                            let _ = write!(serial, "Stopped\r\n").ok();
-                            generate_otp::spawn().ok();
-                        }
                         // Handles the stop command
                         Ok(Command::Time(t)) => {
                             cx.shared.unix_time.lock(|time| *time = t);
@@ -656,20 +581,67 @@ mod app {
             }
         }
     }
-}
 
-mod led {
-    use embedded_hal::digital::v2::OutputPin;
-
-    #[inline(never)]
-    pub fn led_on(_led: &mut impl OutputPin) {
-        //rprintln!("led_on");
-        _led.set_low().ok();
+    // Checks if a button press happens, if it happens, spawn the send_data function.
+    #[task(binds = GPIOTE, local = [last_press: u64 = 0])]
+    fn button_interrupt(cx: button_interrupt::Context) {
+        unsafe { core::ptr::write_volatile(0x4000_6100 as *mut u32, 0); }
+        let now = monotonics::now().ticks();
+        if now - *cx.local.last_press > 200 {
+            *cx.local.last_press = now;
+            send_data::spawn().ok();
+        }
     }
 
-    #[inline(never)]
-    pub fn led_off(_led: &mut impl OutputPin) {
-        //rprintln!("led_off");
-        _led.set_high().ok();
+    // Keeps the usb connection fresh so windows doesn't drop the connection.
+    #[task(shared = [vir_keyboard, gpio_p0])]
+    fn hid_tick(mut cx: hid_tick::Context) {
+        cx.shared.vir_keyboard.lock(|vir_keyboard| {
+            match vir_keyboard.tick() {
+                Ok(_) => {}
+                Err(_) => {}
+            }
+        });
+
+        hid_tick::spawn_after(1u64.millis()).ok();
+    }
+
+    // Function to send data over to the computer.
+    #[task(shared = [vir_keyboard, code], local = [index: usize = 0])]
+    fn send_data(mut cx: send_data::Context) {
+        rprintln!("\n--- send_data ---");
+        let i = *cx.local.index;
+        // Code variable is always 6 index long, loops through each digit, this is done so the same character
+        // after each other can be sent.
+        if i < 6 {
+            let key = cx.shared.code.lock(|code| code[i]);
+
+            cx.shared.vir_keyboard.lock(|vir_keyboard| {
+                vir_keyboard.device().write_report([key]).ok();
+            });
+
+            *cx.local.index += 1;
+            release_keys::spawn_after(20u64.millis()).ok();
+            send_data::spawn_after(40u64.millis()).ok();
+        }
+        // When all digits are sent, reset index to 0 and send a Enter Keyboard command.
+        else {
+            *cx.local.index = 0;
+
+            cx.shared.vir_keyboard.lock(|vir_keyboard| {
+                vir_keyboard.device().write_report([Keyboard::ReturnEnter]).ok();
+            });
+            release_keys::spawn_after(20u64.millis()).ok();
+        }
+    }
+
+    // Function to release the key, has to be done as otherwise windows will not regard it as a received character.
+    #[task(shared = [vir_keyboard])]
+    fn release_keys(mut cx: release_keys::Context) {
+        let no_keys: [Keyboard; 0] = [];
+
+        cx.shared.vir_keyboard.lock(|vir_keyboard| {
+            vir_keyboard.device().write_report(no_keys).ok();
+        });
     }
 }
