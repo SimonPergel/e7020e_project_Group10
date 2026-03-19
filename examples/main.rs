@@ -32,6 +32,8 @@ use {
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
     },
     usbd_serial::{SerialPort, USB_CLASS_CDC},
+    usbd_human_interface_device::{device::keyboard::{NKROBootKeyboard, NKROBootKeyboardConfig}, page::Keyboard, prelude::{UsbHidClass, *}},
+    frunk::{HCons, HNil},
 };
 
 // Global constants
@@ -75,25 +77,6 @@ mod totp {
             | (u32::from(hash[offset + 3]) & 0xff))
             % 10u32.pow(digits);
         code
-    }
-
-    impl Keyboard {
-        fn from_digit(d:u8) -> Self {
-            match d {
-                0 => Keyboard::Num0,
-                1 => Keyboard::Num1,
-                2 => Keyboard::Num2,
-                3 => Keyboard::Num3,
-                4 => Keyboard::Num4,
-                5 => Keyboard::Num5,
-                6 => Keyboard::Num6,
-                7 => Keyboard::Num7,
-                8 => Keyboard::Num8,
-                9 => Keyboard::Num9,
-                _ => Keyboard::NoEventIndicated,
-
-            }
-        }
     }
 }
 
@@ -229,6 +212,7 @@ mod app {
         running: bool, // start and stoprunning: bool,  // start and stop
         nvmc: FlashNvmc, // keep NVMC as a shared resource
         code: [Keyboard; 6],
+        vir_keyboard: UsbHidClass<'static, Usbd<UsbPeripheral<'static>>, HCons<NKROBootKeyboard<'static, Usbd<UsbPeripheral<'static>>>, HNil>>,
     }
 
     #[local]
@@ -267,6 +251,10 @@ mod app {
         // make static lifetime for clocks, stores the value inside the RTICs local memory, ensures the value lives for the entire program (static liftime)
         cx.local.clocks.replace(clocks.enable_ext_hfosc()); // static lifetime = value nerver dropped or become invalid
 
+        let mut vir_keyboard = UsbHidClassBuilder::new()
+            .add_device(NKROBootKeyboardConfig::default())
+            .build(cx.local.usb_bus.as_ref().unwrap());
+
         let usb_bus = UsbBusAllocator::new(Usbd::new(UsbPeripheral::new(
             device.USBD,
             cx.local.clocks.as_ref().unwrap(), // refer to static lifetime
@@ -302,6 +290,7 @@ mod app {
         // let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
 
         // let otp_code = totp.generate(unix_time); // unix_time should be in seconds
+        
 
         let usb_dev = UsbDeviceBuilder::new(
             &cx.local.usb_bus.as_ref().unwrap(),
@@ -317,6 +306,8 @@ mod app {
         .unwrap()
         .build();
 
+        let code: [Keyboard; 6] = [Keyboard::A, Keyboard::A, Keyboard::C, 
+            Keyboard::D, Keyboard::F, Keyboard::F];
         // start blinking
         let start_blink = mono.now() + 10.millis();
         blink::spawn_at(start_blink, start_blink).unwrap();
@@ -324,11 +315,13 @@ mod app {
         #[allow(unreachable_code)]
         (
             Shared {
+                code: code,
                 unix_time: 0,
                 duty: 50,
                 period_ms: 1000,
                 running: true,
                 nvmc: nvmc, // Initialize the NVMC peripheral and store it in the shared resources
+                vir_keyboard,
             },
             Local {
                 led1,
@@ -356,8 +349,28 @@ mod app {
 
         }
     */
-    #[task(shared = [unix_time, nvmc])]
+
+        
+
+        
+
+    #[task(shared = [code, unix_time, nvmc])]
     fn generate_otp(mut cx: generate_otp::Context) {
+        fn digit_to_key(digit: u8) -> Keyboard {
+            match digit {
+                1 => Keyboard::Keyboard1AndExclamation,
+                2 => Keyboard::Keyboard2AndAt,
+                3 => Keyboard::Keyboard3AndHash,
+                4 => Keyboard::Keyboard4AndDollar,
+                5 => Keyboard::Keyboard5AndPercent,
+                6 => Keyboard::Keyboard6AndCaret,
+                7 => Keyboard::Keyboard7AndAmpersand,
+                8 => Keyboard::Keyboard8AndAsterisk,
+                9 => Keyboard::Keyboard9AndOpenParenthesis,
+                0 => Keyboard::Keyboard0AndCloseParenthesis,
+                _ => Keyboard::Space, // A safe fallback if a number > 9 is passed
+            }
+        }
         let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
         // let len = secret_storage::read_secret(&mut cx.shared.nvmc.lock(|n| n), &mut secret_buf);
         let len = cx
@@ -376,7 +389,7 @@ mod app {
         rprintln!("OTP code: {}", otp_code);
 
         // extract one digit at the time and ad it to a temp array
-        let mut digits = [0u8; 6]
+        let mut digits = [0u8; 6];
         let mut temp = otp_code;   
 
         for i in (0..6).rev() {
@@ -385,12 +398,10 @@ mod app {
         }
         // Store the code in the shared varible
         let len = cx.shared.code.lock(|code| {                      // lock and access the shared varible
-            for (i, d) in digits.iter().enumerate() {               // iterates over the  extracted digits from previous step
-                code[i] = Keyboard::from_digit(*d);                 // This will convert the numerical digits into keyboard rep.
+            for (i, d as u8) in digits.iter().enumerate() {               // iterates over the  extracted digits from previous step
+                let code[i] = digit_to_key(*d);                           // This will convert the numerical digits into keyboard rep.
             }                                                       // neumerate: build on iterator to provide a sequence pairs (consists of index and a refernce to where its located)
         });
-
-
     }
     // Software PWM using duty from Shared
     #[task(shared = [duty, period_ms, running], local = [cnt: u32 = 0, led1, led_mirror, is_on: bool = false])]

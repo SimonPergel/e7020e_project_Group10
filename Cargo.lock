@@ -27,6 +27,7 @@ dependencies = [
  "embedded-graphics",
  "embedded-hal 0.2.7",
  "embedded-storage",
+ "frunk",
  "hmac",
  "nb 1.1.0",
  "nrf52833-hal",
@@ -39,6 +40,7 @@ dependencies = [
  "systick-monotonic",
  "usb-device",
  "usbd-hid",
+ "usbd-human-interface-device",
  "usbd-serial",
 ]
 
@@ -101,6 +103,18 @@ name = "bitflags"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
+
+[[package]]
+name = "bitvec"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
+dependencies = [
+ "funty",
+ "radium",
+ "tap",
+ "wyz",
+]
 
 [[package]]
 name = "block-buffer"
@@ -386,6 +400,62 @@ dependencies = [
 ]
 
 [[package]]
+name = "frunk"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28aef0f9aa070bce60767c12ba9cb41efeaf1a2bc6427f87b7d83f11239a16d7"
+dependencies = [
+ "frunk_core",
+ "frunk_derives",
+ "frunk_proc_macros",
+ "serde",
+]
+
+[[package]]
+name = "frunk_core"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "476eeaa382e3462b84da5d6ba3da97b5786823c2d0d3a0d04ef088d073da225c"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "frunk_derives"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0b4095fc99e1d858e5b8c7125d2638372ec85aa0fe6c807105cf10b0265ca6c"
+dependencies = [
+ "frunk_proc_macro_helpers",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "frunk_proc_macro_helpers"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1952b802269f2db12ab7c0bd328d0ae8feaabf19f352a7b0af7bb0c5693abfce"
+dependencies = [
+ "frunk_core",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "frunk_proc_macros"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3462f590fa236005bd7ca4847f81438bd6fe0febd4d04e11968d4c2e96437e78"
+dependencies = [
+ "frunk_core",
+ "frunk_proc_macro_helpers",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "fugit"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -393,6 +463,12 @@ checksum = "4e639847d312d9a82d2e75b0edcc1e934efcc64e6cb7aa94f0b1fbec0bc231d6"
 dependencies = [
  "gcd",
 ]
+
+[[package]]
+name = "funty"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "gcd"
@@ -668,10 +744,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_enum"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d0bca838442ec211fa11de3a8b0e0e8f3a4522575b5c4c06ed722e005036f26"
+dependencies = [
+ "num_enum_derive",
+ "rustversion",
+]
+
+[[package]]
+name = "num_enum_derive"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+
+[[package]]
+name = "option-block"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0f2c5d345596a14d7c8b032a68f437955f0059f2eb9a5972371c84f7eef3227"
+
+[[package]]
+name = "packed_struct"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36b29691432cc9eff8b282278473b63df73bea49bc3ec5e67f31a3ae9c3ec190"
+dependencies = [
+ "bitvec",
+ "packed_struct_codegen",
+]
+
+[[package]]
+name = "packed_struct_codegen"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cd6706dfe50d53e0f6aa09e12c034c44faacd23e966ae5a209e8bdb8f179f98"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
 
 [[package]]
 name = "panic-halt"
@@ -761,6 +885,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "radium"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
+
+[[package]]
 name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -820,6 +950,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustversion"
+version = "1.0.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -853,6 +989,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
@@ -971,6 +1108,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "tap"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
 name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1042,6 +1185,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "usbd-human-interface-device"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42ec14dbf3faf02aa63c4a6c10465ccd6b29010380a48e5187d63d5233fbbaf6"
+dependencies = [
+ "frunk",
+ "fugit",
+ "heapless 0.8.0",
+ "num_enum",
+ "option-block",
+ "packed_struct",
+ "usb-device",
+]
+
+[[package]]
 name = "usbd-serial"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1078,6 +1236,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de437e2a6208b014ab52972a27e59b33fa2920d3e00fe05026167a1c509d19cc"
 dependencies = [
  "vcell",
+]
+
+[[package]]
+name = "wyz"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
+dependencies = [
+ "tap",
 ]
 
 [[package]]
