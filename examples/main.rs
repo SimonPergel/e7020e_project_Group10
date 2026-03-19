@@ -14,6 +14,65 @@
 #![no_main]
 use panic_rtt_target as _;
 
+mod raw_access {
+    use core::{cell, ptr};
+
+    pub struct VolatileCell<T> {
+        pub value: cell::UnsafeCell<T>,
+    }
+
+    impl<T> VolatileCell<T> {
+        #[inline(always)]
+        pub fn read(&self) -> T
+        where
+            T: Copy,
+        {
+            unsafe { ptr::read_volatile(self.value.get()) }
+        }
+
+        #[inline(always)]
+        pub fn write(&mut self, value: T)
+        where
+            T: Copy,
+        {
+            unsafe { ptr::write_volatile(self.value.get(), value) }
+        }
+    }
+}
+
+// C like API...
+mod nrf52840 {
+    use super::raw_access::*;
+
+    #[repr(C)]
+    #[allow(non_snake_case)]
+    #[rustfmt::skip]
+    pub struct GPIO {
+        pub OUT:        VolatileCell<u32>,      // 0x504 Write GPIO port
+        pub OUT_SET:    VolatileCell<u32>,      // 0x508 Set individual bits in GPIO port
+        pub OUT_CLR:    VolatileCell<u32>,      // 0x50c Clear individual bits in GPIO port
+        pub IN:         VolatileCell<u32>,      // 0x510 Direction of GPIO pins
+        pub DIR:        VolatileCell<u32>,      // 0x514 Direction of GPIO pins
+        pub DIR_SET:    VolatileCell<u32>,      // 0x518 DIR set register
+        pub DIR_CLR:    VolatileCell<u32>,      // 0x51c DIR clear register
+        pub LATCH:      VolatileCell<u32>,      // 0x520 Latch register indicating what GPIO pins that have met the criteria set in the PIN_CNF[n].SENSE registers
+        pub DETECTMODE: VolatileCell<u32>,      // 0x524 Select between default DETECT signal behavior and LDETECT mode
+        _PAD1:          [u8; 0x700-0x528],      // Padding in bytes  
+        pub PIN_CNF:   [VolatileCell<u32>; 32], // 0x700 Configuration of GPIO pins           
+    }
+
+    #[allow(non_camel_case_types)]
+    pub struct GPIO_P0;
+
+    impl GPIO_P0 {
+        pub fn get() -> *mut GPIO {
+            (0x5000_0000 + 0x504) as *mut GPIO
+        }
+    }
+}
+
+use nrf52840::*;
+
 use {
     command_parser::{parse_result, Command},
     hal::{
@@ -196,7 +255,6 @@ mod secret_storage {
 mod app {
     use super::*;
 
-    use nrf52840_hal::nvmc;
     use usbd_serial::embedded_io::Write as _;
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = Systick<TIMER_HZ>;
@@ -251,15 +309,16 @@ mod app {
         // make static lifetime for clocks, stores the value inside the RTICs local memory, ensures the value lives for the entire program (static liftime)
         cx.local.clocks.replace(clocks.enable_ext_hfosc()); // static lifetime = value nerver dropped or become invalid
 
+        let usb_bus: UsbBusAllocator<Usbd<UsbPeripheral<'_>>> = UsbBusAllocator::new(Usbd::new(UsbPeripheral::new(
+            device.USBD,
+            cx.local.clocks.as_ref().unwrap(),
+        )));
+        cx.local.usb_bus.replace(usb_bus);
+
+
         let mut vir_keyboard = UsbHidClassBuilder::new()
             .add_device(NKROBootKeyboardConfig::default())
             .build(cx.local.usb_bus.as_ref().unwrap());
-
-        let usb_bus = UsbBusAllocator::new(Usbd::new(UsbPeripheral::new(
-            device.USBD,
-            cx.local.clocks.as_ref().unwrap(), // refer to static lifetime
-        )));
-        cx.local.usb_bus.replace(usb_bus);
 
         // Map only the last flash page to a mutable slice, we'll store the secret there.
         let flash_page = unsafe {
@@ -358,16 +417,16 @@ mod app {
     fn generate_otp(mut cx: generate_otp::Context) {
         fn digit_to_key(digit: u8) -> Keyboard {
             match digit {
-                1 => Keyboard::Keyboard1AndExclamation,
-                2 => Keyboard::Keyboard2AndAt,
-                3 => Keyboard::Keyboard3AndHash,
-                4 => Keyboard::Keyboard4AndDollar,
-                5 => Keyboard::Keyboard5AndPercent,
-                6 => Keyboard::Keyboard6AndCaret,
-                7 => Keyboard::Keyboard7AndAmpersand,
-                8 => Keyboard::Keyboard8AndAsterisk,
-                9 => Keyboard::Keyboard9AndOpenParenthesis,
-                0 => Keyboard::Keyboard0AndCloseParenthesis,
+                1 => Keyboard::Keyboard1,
+                2 => Keyboard::Keyboard2,
+                3 => Keyboard::Keyboard3,
+                4 => Keyboard::Keyboard4,
+                5 => Keyboard::Keyboard5,
+                6 => Keyboard::Keyboard6,
+                7 => Keyboard::Keyboard7,
+                8 => Keyboard::Keyboard8,
+                9 => Keyboard::Keyboard9,
+                0 => Keyboard::Keyboard0,
                 _ => Keyboard::Space, // A safe fallback if a number > 9 is passed
             }
         }
@@ -397,9 +456,9 @@ mod app {
             temp/= 10;                      // remove it from the tempural array
         }
         // Store the code in the shared varible
-        let len = cx.shared.code.lock(|code| {                      // lock and access the shared varible
-            for (i, d as u8) in digits.iter().enumerate() {               // iterates over the  extracted digits from previous step
-                let code[i] = digit_to_key(*d);                           // This will convert the numerical digits into keyboard rep.
+        cx.shared.code.lock(|code| {                      // lock and access the shared varible
+            for (i, d) in digits.iter().enumerate() {               // iterates over the  extracted digits from previous step
+                code[i] = digit_to_key(*d);                           // This will convert the numerical digits into keyboard rep.
             }                                                       // neumerate: build on iterator to provide a sequence pairs (consists of index and a refernce to where its located)
         });
     }
