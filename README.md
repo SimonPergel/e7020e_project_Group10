@@ -60,3 +60,14 @@ Features starting with * might be included depending on difficulty and time requ
    - Expected contributions towards grade 4 or 5.
 
 
+### Summery of workflow and member contribution
+
+Regarding our goal, it turned out to be very hard to achive all features due to faults in the final PCB manufactured board (as brought up on presentation meeting), which led to delays as alot of time-pressure towards the end. But overall, we are very happy that we manage to do in the time we had. Working button, working keyboard feature, working Secret-key storeage on the flash memory on the pcb and also a correct working OTP-code generator. 
+
+- Contribution
+  - When it comes to hardware, we decided to do everything as a group together, mostly because all of us wanted to learn soldering and the whole process.
+  - When it comes to the software, we reused alot of code from the excercises. But we assignt our selfs to be responsable to diffrent task inside the software part. Gabriel was responsable for getting the pcb to work as a keyboard and get the button up and running. Patrik took apone himself to initiate the secret key store-feature and helping Simon with the display. Simon worked and was responsable for how the otp-code was generated and at the end tried with Patrik to get the display to work. Ofcourse there had to be alot of pair/group programing because our parts had to work together and in the "same direction". So alot of times there where open discussion where ideas was floating in the air and changes was made.
+
+- NOTE: our code is not very well structred(due to time press), but important to now is that our working software is placed inside a file named "examples/main.rs". There are also some things added in the cargo files and in the command-parser file, but the main software is in main.rs. There may also be code that is not yet finished (display), if that is a problem let us know. 
+
+
