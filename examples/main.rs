@@ -103,47 +103,163 @@ const TIMER_HZ: u32 = 1000;
 type FlashNvmc = hal::nvmc::Nvmc<hal::pac::NVMC>;
 
 mod display {
-    // if the bords is not connected to the pc, a button press should display the OPT code
+    use nrf52833_hal::{
+        twim::{Twim, Pins, Frequency},
+        gpio::{p0::Parts as P0Parts, p1::Parts as P1Parts, Floating, Input},
+        pac::TWIM0,
+    };
+    use rtt_target::rprintln;
+
+    use crate::app::init;
+
+    const ADDR: u8 = 0x3C; // Common SSD1306 I2C address
+
+    pub struct Display {
+        twim: Twim<TWIM0>,
+    }
+    const FONT: [[u8; 5]; 11] = [
+            // 0-9 + ':'
+            [0x3E, 0x51, 0x49, 0x45, 0x3E], // 0
+            [0x00, 0x42, 0x7F, 0x40, 0x00], // 1
+            [0x62, 0x51, 0x49, 0x49, 0x46], // 2
+            [0x22, 0x49, 0x49, 0x49, 0x36], // 3
+            [0x18, 0x14, 0x12, 0x7F, 0x10], // 4
+            [0x2F, 0x49, 0x49, 0x49, 0x31], // 5
+            [0x3E, 0x49, 0x49, 0x49, 0x32], // 6
+            [0x01, 0x71, 0x09, 0x05, 0x03], // 7
+            [0x36, 0x49, 0x49, 0x49, 0x36], // 8
+            [0x26, 0x49, 0x49, 0x49, 0x3E], // 9
+            [0x00, 0x36, 0x36, 0x00, 0x00], // :
+        ];
+
+    impl Display {
+        pub fn new(twim0: TWIM0, p0: nrf52833_hal::pac::P0, p1: nrf52833_hal::pac::P1) -> Self {
+            // Initilizes Port0 and Port 1
+            let port0= P0Parts::new(p0);
+            let port1=P1Parts::new(p1);
+           // access both pins and change them into input pins
+            let scl= port1.p1_09.into_floating_input().degrade();   // the clock line, gives controll, when to read or write
+            let sda= port0.p0_11.into_floating_input().degrade();   // the data line, devises read ir writre data on SDA in sync with SCL
+
+            // Create a pin struct for convinence
+            let pins = Pins {scl, sda};
+
+            // I2C - is a communication method that lets chips talk to each other using only two wires
+            // SCL - Searial clock that TWIM generates the clock pulese
+            // SDA - Seral data that moves the data on the line
+            // creates a Two-Wire Interface Master
+            let twim = Twim::new(twim0, pins, Frequency::K400);
+
+            let mut display= Self { twim };
+            display.init();
+            // disp.init();
+
+            rprintln!("Display initialized");
+
+            display
+        }
+        // function that handles sending a command to the display
+        fn write_command(&mut self, cmd: u8) {
+            let buffer = [0x00, cmd];
+            self.twim.write(ADDR, &buffer).ok();    // this basically sends [ COMMAND_MODE, COMMAND]
+        }
+        // this function send pixle data to the display
+        fn write_data(&mut self, data: &[u8]) {
+            let mut buffer = [0u8; 17];
+            buffer[0] = 0x40;                   // set display start Line
+
+            for chunk in data.chunks(16) {       // sending data in chunks of 16 bytes(display limit, cant handle more)
+                let len = chunk.len();
+                buffer[1..1 + len].copy_from_slice(chunk);
+                self.twim.write(ADDR, &buffer[..1 + len]).ok(); // sends the display chunks like [DATA_MODE, pixle1,...,]
+            }
+        }
+    
+        // inital code that has to be set(SETUP) - DataSheet https://se.farnell.com/midas/mdob128032gv-wi/oled-display-cob-128-x-32-pixel/dp/3407291
+        fn init(&mut self) {
+            let init_cmds = [
+                0xAE, 0xD5, 0x80, 0xA8, 0x1F, 0xD3, 0x00,
+                0x40, 0x8D, 0x14, 0xA1, 0xC8, 0xDA, 0x12,
+                0x81, 0xFF, 0xD9, 0x22, 0xDB, 0x30, 0xA4,
+                0xA6, 0xAF,
+            ];
+
+            for &cmd in &init_cmds {
+                self.write_command(cmd);
+            }
+        }
+        // the screen is 128x32 pixles
+        pub fn clear_display(&mut self) {
+            for page in 0..4 {                     // The display us divided into 4 x 8 rows( 4 page)
+                self.write_command(0xB0 + page);                   // The display us divided into 4 x 8 rows( 4 page)
+                self.write_command(0x00);
+                self.write_command(0x10);
+                self.write_data(&[0x00; 128]);
+
+                
+            }
+        }
+      
+        pub fn show_code_message(&mut self, code: u32) {
+            self.clear_display();
+
+            // Set cursor to start (page 0, column 0)
+            self.write_command(0xB0); // page 0
+            self.write_command(0x00); // lower column
+            self.write_command(0x10); // higher column
+
+        }
+         
+    }
+         
+
 }
+
+
 
 mod usb_keyboard {
     // maby convert code to string
     // send digit as HID keybord events
 }
+// HMAC ( Hash-based Message Authentication Code) is like a construction or a method 
+// HMAC = hash function(SHA1) + secret Key + a specific algorithmic recipe
+
 mod totp {
     use hmac::{Hmac, Mac};
     use sha1::Sha1;
+
 
     // Type alias for HMAC-SHA1
     type HmacSha1 = Hmac<Sha1>;
 
     /// Generate a TOTP code
     pub fn generate_totp(secret: &[u8], unix_time: u64, digits: u32, step: u64) -> u32 {
-        let counter = unix_time / step;
+        // Convert time into timestep (in our case a 30 sec window where code should be valid)
+        let counter = unix_time / step;   
+        // Create the HMAC object first before we add the counter, order is important for the HMAC process
         let mut mac = HmacSha1::new_from_slice(secret).unwrap();
+        // First convert mac into bytes(HMAC works on bytes not numbers) and then feed it into the HMAC
         mac.update(&counter.to_be_bytes());
+        // Compute the final HMAC hash, this should return a 20 byte array(SHA1 output size)
         let hash = mac.finalize().into_bytes();
 
-        // dynamic truncation
+        // dynamic truncation  - from example 5.4 - https://datatracker.ietf.org/doc/html/rfc4226
         let offset = (hash[19] & 0x0f) as usize;
         let code = ((u32::from(hash[offset]) & 0x7f) << 24
             | (u32::from(hash[offset + 1]) & 0xff) << 16
             | (u32::from(hash[offset + 2]) & 0xff) << 8
-            | (u32::from(hash[offset + 3]) & 0xff))
+            | (u32::from(hash[offset + 3]) & 0xff)) 
             % 10u32.pow(digits);
         code
     }
 }
 
 mod secret_storage {
-    // use super::*;
     use crate::FlashNvmc;
-    // use otp::Secret;
-    // I need this to be able to read/write to flash memory
     use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
     use rtt_target::rprintln;
 
-    pub const FLASH_SIZE: u32 = 512 * 1024; // 512 kB flash memory, might be unnecessary to define this
+    pub const FLASH_SIZE: u32 = 512 * 1024; // 512 kB flash memory according to product specification of nRF52833
     pub const PAGE_SIZE: u32 = 4096; // 4 kB page size
     pub const SECRET_PAGE_START: u32 = FLASH_SIZE - PAGE_SIZE; // Start of the last page in flash memory
 
@@ -151,43 +267,22 @@ mod secret_storage {
     const MAGIC: u32 = u32::from_le_bytes(*b"SECR");
     pub const SECRET_MAX_LEN: usize = 32; // Max length of the secret, we set it to 32 bytes
     const HEADER_SIZE: usize = 4 + 4; // MAGIC (4 bytes) + length (4 bytes)
-    const RECORD_SIZE: usize = HEADER_SIZE + SECRET_MAX_LEN; // Total size of the record to be stored in flash (32 bytes)
+    const RECORD_SIZE: usize = HEADER_SIZE + SECRET_MAX_LEN; // Total size of the record to be stored in flash (40 bytes)
 
     #[inline(never)]
     pub fn write_secret(nvmc: &mut FlashNvmc, secret: &[u8]) {
+        // Check that the secret is valid, we expect a secret that is longer than 0 chars and shorter than SECRET_MAX_LEN
         if secret.is_empty() || secret.len() > SECRET_MAX_LEN {
-            return; // Invalid secret length
+            return;
         }
+
         // Create a record to hold the magic, length and secret data
         let mut record = [0xFFu8; RECORD_SIZE];
-        record[0..4].copy_from_slice(&MAGIC.to_le_bytes()); // Write the magic number
-        record[4..8].copy_from_slice(&(secret.len() as u32).to_le_bytes()); // Write the length of the secret
-        record[HEADER_SIZE..HEADER_SIZE + secret.len()].copy_from_slice(secret); // Write the secret data
+        record[0..4].copy_from_slice(&MAGIC.to_le_bytes()); // Write the magic number to record
+        record[4..8].copy_from_slice(&(secret.len() as u32).to_le_bytes()); // Write the length of the secret to record
+        record[HEADER_SIZE..HEADER_SIZE + secret.len()].copy_from_slice(secret); // Write the secret data to record
 
-        // rprintln!("Record length: {:?}\nRecord received: {:?}", record.len(), record);
-
-        /*
-        // Write the record to flash memory
-        match nvmc.erase(0, PAGE_SIZE) {
-            // This was for debugging purposes, couldn't get it to properly write to memory and wasnt sure why...
-            Ok(_) => rprintln!("Flash page erased successfully"),
-            Err(e) => {
-                rprintln!("Failed to erase flash page: {:?}", e);
-                return; // Failed to erase flash, return early
-            }
-        }
-
-        match nvmc.write(0, &record) {
-            // Also for debugging purposes
-            Ok(_) => rprintln!("Secret written to flash successfully"),
-            Err(e) => {
-                rprintln!("Failed to write secret to flash: {:?}", e);
-                return; // Failed to write to flash, return early
-            }
-        }
-        */
-
-        // Clear the page and then write the record, don't want to spam the RTT terminal with success messages.
+        // Clear the page and then write the record to flash, only write to RTT terminal if something fails
         if nvmc.erase(0, PAGE_SIZE).is_err() {
             rprintln!("Failed to erase flash page");
             return;
@@ -196,21 +291,31 @@ mod secret_storage {
             rprintln!("Failed to write secret to flash");
             return;
         }
+
+        // Clear the record from RAM after writing to flash for security reasons
+        // This is slight unnecessary since we're not locking the flash memory after writing, but we thought we'd prepare for it anyways
+        let mut i = 0;
+        while i < record.len() {
+            record[i] = 0x00;
+            i += 1;
+        }
     }
 
     #[inline(never)]
     pub fn read_secret(nvmc: &mut FlashNvmc, buffer: &mut [u8]) -> usize {
         let mut header = [0u8; HEADER_SIZE];
 
-        // Offset 0 since we mapped nvmc to the secret page.
+        // Offset 0 since we mapped nvmc to the secret page (Last 4096 bytes of flash)
         if let Err(e) = nvmc.read(0, &mut header) {
+            // This only reads header.len() number of bytes, which is 8 bytes (4 for magic and 4 for length)
             rprintln!("Failed to read secret header: {:?}", e);
             return 0;
         }
 
-        // Validate the magic number to ensure we have a valid record
-        let magic = u32::from_le_bytes([header[0], header[1], header[2], header[3]]); // Extract the magic number
+        // Extract and validate the magic number to ensure we have a valid record
+        let magic = u32::from_le_bytes([header[0], header[1], header[2], header[3]]); // Converts raw bytes to a u32 magic number, we expect 0x52434553 which is "RCES" in ASCII (SECR backwards)
         if magic != MAGIC {
+            // This works because both the MAGIC and magic header is stored in little endian format (supposed to read least significant byte first)
             rprintln!("Invalid magic number in flash, no valid secret stored");
             return 0;
         }
@@ -266,6 +371,7 @@ mod app {
         vir_keyboard: UsbHidClass<'static, Usbd<UsbPeripheral<'static>>, HCons<BootKeyboard<'static, Usbd<UsbPeripheral<'static>>>, HNil>>,
         gpio_p0: &'static mut GPIO,
         serial: SerialPort<'static, Usbd<UsbPeripheral<'static>>>,
+        display: display::Display,
     }
 
     #[local]
@@ -313,26 +419,6 @@ mod app {
             )
         };
         let nvmc = FlashNvmc::new(device.NVMC, flash_page);
-        // Init button
-        // let port0 = P0Parts::new(device.P0);
-        // let button = port0.p0_11.into_pullup_input().degrade();
-
-        //let usb_bus = cx.local.usb_bus.as_ref().unwrap();
-
-        // Allocates a mut fixed size byte array on the stack, every element is initialized to 0u8
-        // Rust requires a pre-allocate the space
-        //let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
-
-        // returns the actual number of bytes written into the buffer, need real length for correct slicing later
-        // writes the actual secret key from NVM into beginning of secret_buf
-        // let len = secret_storage::read_secret(&mut nvmc, &mut secret_buf);
-
-        // takes the valid portion of the buffer, convert bytes into secret type, Secret is a safe wrapper around the secret key
-        //let secret = Secret::from_bytes(&secret_buf[..len]).unwrap();       // extract the result, if not ok --> Panic! Must FIX
-
-        // let totp = Totp::<Sha1>::new(secret, DIGITS, TIME_STEP); // should be a 6 digit code and valied for 30 sec
-
-        // let otp_code = totp.generate(unix_time); // unix_time should be in seconds
         
         // Had to change device class in order for windows to recognize it as a keyboard + serial connection.
         let mut usb_dev = UsbDeviceBuilder::new(cx.local.usb_bus.as_ref().unwrap(), UsbVidPid(0x1209, 0x0001))
@@ -351,6 +437,7 @@ mod app {
 
         let gpio_p0 = unsafe { &mut *GPIO_P0::get() }; // get the reference to GPIOA in memory
         gpio_p0.PIN_CNF[29].write(0b1100); // Enable button 1
+        let display = display::Display::new(device.TWIM0, device.P0, device.P1);
 
         // Unlocks the button etc.
         unsafe {
@@ -369,6 +456,7 @@ mod app {
                 vir_keyboard,
                 gpio_p0,
                 serial,
+                display,
             },
             Local {
                 usb_dev,
@@ -378,8 +466,17 @@ mod app {
         )
     }
 
-    #[task(shared = [code, unix_time, nvmc])]
+    #[task(shared = [display])]
+    fn display_otp(mut cx: display_otp::Context, code:u32) {
+        cx.shared.display.lock(|display| {
+            display.show_code_message(code);
+        });
+
+    }
+
+    #[task(shared = [code, unix_time, nvmc, display])]
     fn generate_otp(mut cx: generate_otp::Context) {
+        // Helper function used for converting the numbers into Keyboard keys
         fn digit_to_key(digit: u8) -> Keyboard {
             match digit {
                 1 => Keyboard::Keyboard1,
@@ -395,8 +492,13 @@ mod app {
                 _ => Keyboard::Space, // A safe fallback if a number > 9 is passed
             }
         }
+        // Allocates a mut fixed size byte array on the stack, every element is initialized to 0u8 (32 zeros)
+        // Rust requires a pre-allocate the space
         let mut secret_buf = [0u8; secret_storage::SECRET_MAX_LEN];
         // let len = secret_storage::read_secret(&mut cx.shared.nvmc.lock(|n| n), &mut secret_buf);
+
+        // reads the secret from flash memory into the secret buffer
+        // lock because it shared, prevent race conditions(for saftey)
         let len = cx
             .shared
             .nvmc
@@ -405,14 +507,15 @@ mod app {
             rprintln!("Invalid secret!");
             return;
         }
-
+        // if the secret is not of size 32, take only the secret part (uses the documented length)
         let secret = &secret_buf[..len];
-
+        // generate the OTP code by calling the TOTP fucntion (in mod totp)
         let otp_code =
             totp::generate_totp(secret, cx.shared.unix_time.lock(|t| *t), DIGITS, TIME_STEP);
         rprintln!("OTP code: {}", otp_code);
 
-        // extract one digit at the time and ad it to a temp array
+        // Prepare Digit extraction 
+        // extract one digit at the time and add it to a temp array
         let mut digits = [0u8; 6];
         let mut temp = otp_code;   
 
@@ -420,26 +523,16 @@ mod app {
             digits[i] = (temp % 10) as u8;  // extract the last element 
             temp/= 10;                      // remove it from the tempural array
         }
-        // Store the code in the shared varible
-        cx.shared.code.lock(|code| {                      // lock and access the shared varible
-            for (i, d) in digits.iter().enumerate() {               // iterates over the  extracted digits from previous step
-                code[i] = digit_to_key(*d);                           // This will convert the numerical digits into keyboard rep.
-            }                                                       // neumerate: build on iterator to provide a sequence pairs (consists of index and a refernce to where its located)
+        // Store the code in the shared varible with the type Keyboard
+        cx.shared.code.lock(|code| {                    // lock and access the shared varible
+            for (i, d) in digits.iter().enumerate() {           // iterates over the  extracted digits from previous step
+                code[i] = digit_to_key(*d);                                 // This will convert the numerical digits into keyboard rep.
+            }                                                               // neumerate: build on iterator to provide a sequence pairs (consists of index and a refernce to where its located)
         });
+        display_otp::spawn(otp_code).ok();
         send_data::spawn().ok();
     }
 
-    // When the button is pressed and generate the OPT code and display it
-    // #[task(binds = GPIOTE, shared = [unix_time])]
-    // fn button (mut cx: button::Context){
-
-    // Calculate the current time
-    // let time = cx.shared.unix_time.lock(|t| *t);
-    // caculate the right OPT code based on the time
-    //let opt = totp::generate(SECRET, time);
-
-    // display::show(opt)
-    //  }
     // When USB is connected -> send OPT
     #[task(binds = USBD, priority = 3, local = [usb_dev, buf, len: usize = 0, data_arr: [u8; 64] = [0; 64]], shared = [serial, vir_keyboard, unix_time, nvmc])]
     fn usbd(mut cx: usbd::Context) {
