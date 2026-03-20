@@ -60,7 +60,7 @@ Features starting with * might be included depending on difficulty and time requ
    - Expected contributions towards grade 4 or 5.
 
 
-### Summery of workflow and member contribution
+## Summary of workflow and member contribution
 
 Regarding our goal, it turned out to be very hard to achive all features due to faults in the final PCB manufactured board (as brought up on presentation meeting), which led to delays and alot of time-pressure towards the end. But overall, we are very happy that we manage to do in the time we had. Working button, working keyboard feature, working Secret-key storeage on the flash memory on the pcb and also a correct working OTP-code generator. 
 
